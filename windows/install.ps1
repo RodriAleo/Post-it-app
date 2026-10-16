@@ -24,7 +24,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
-foreach ($dir in "common", "windows") {
+foreach ($dir in "common", "windows", "assets") {
     $target = Join-Path $dest $dir
     if (Test-Path $target) { Remove-Item -Recurse -Force $target }
     Copy-Item -Recurse (Join-Path $repo $dir) $target
@@ -37,9 +37,11 @@ foreach ($folder in [Environment]::GetFolderPath("Startup"), [Environment]::GetF
     $lnk.TargetPath = $pythonw
     $lnk.Arguments = "`"$script`""
     $lnk.WorkingDirectory = $dest
+    $lnk.IconLocation = (Join-Path $dest "assets\postits.ico") + ",0"
     $lnk.Description = "Notas adhesivas en el escritorio (abrirlo de nuevo crea una nota)"
     $lnk.Save()
 }
 
 Start-Process -FilePath $pythonw -ArgumentList "`"$script`""
-Write-Host "Post-its instalado. Notas en $env:APPDATA\PostIts\notes.json" -ForegroundColor Green
+$version = & (Join-Path (Split-Path $pythonw) "python.exe") $script --version
+Write-Host "$version instalado. Notas en $env:APPDATA\PostIts\notes.json" -ForegroundColor Green

@@ -1,5 +1,7 @@
 # Post-its de escritorio
 
+<img src="assets/postits.svg" width="96" align="right" alt="">
+
 Notas adhesivas ancladas al escritorio, para **Linux (GNOME)** y **Windows**.
 Las notas quedan debajo de todas las ventanas: solo se ven cuando mirás el
 escritorio (Super+D / Win+D, o sin ventanas encima).
@@ -54,10 +56,12 @@ Para quitarlo: `windows\uninstall.bat`.
 ## Estructura
 
 ```
-common/postits_core.py   lógica compartida: colores, tamaños, guardado JSON,
-                         checkboxes y cálculo de bordes/redimensionado
+common/postits_core.py   lógica compartida: versión, colores, tamaños, guardado
+                         JSON, checkboxes y cálculo de bordes/redimensionado
 linux/                   versión GTK 3: ventanas de tipo "escritorio" de X11
 windows/                 versión Tkinter: ventanas propiedad de Progman (Win32/ctypes)
+assets/                  ícono (SVG fuente + PNG y .ico generados)
+tools/build_icons.py     regenera los PNG y el .ico si cambiás el SVG
 ```
 
 Las dos versiones usan el mismo formato de `notes.json`, así que podés copiar
@@ -65,3 +69,14 @@ las notas de un sistema al otro.
 
 Para probar sin tocar tus notas reales: `POSTITS_DATA=/tmp/prueba ./linux/postits.py`
 (en Windows, `set POSTITS_DATA=...` antes de `pythonw windows\postits.pyw`).
+
+## Versiones
+
+El número de versión vive **solo** en `VERSION` dentro de
+[`common/postits_core.py`](common/postits_core.py); de ahí lo toman las dos
+apps (menú ⋮ → *Acerca de*, `--version`) y los instaladores. Para sacar una
+versión nueva:
+
+1. Cambiar `VERSION` (versionado semántico).
+2. Agregar la sección correspondiente en [CHANGELOG.md](CHANGELOG.md).
+3. Commit y tag: `git tag vX.Y.Z && git push --tags`.

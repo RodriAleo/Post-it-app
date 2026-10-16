@@ -179,6 +179,7 @@ class Note:
                                  command=lambda n=name: (self.apply_color(n), self.app.schedule_save()))
         menu.add_separator()
         menu.add_command(label="Nueva nota", command=lambda: self.app.new_note(near=self))
+        menu.add_command(label=f"Acerca de {core.APP_NAME}", command=lambda: self.app.show_about(self))
         menu.add_command(label="Cerrar Post-its (las notas se guardan)", command=self.app.quit)
         b = self.menu_btn
         menu.tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
@@ -431,13 +432,31 @@ class App:
         self.server = server
         self.root = tk.Tk()
         self.root.withdraw()
-        self.root.title("Post-its")
+        self.root.title(core.APP_NAME)
+        self._set_icon()
         family = self._pick_family()
         self.text_font = tkfont.Font(family=family, size=core.FONT_SIZE)
         self.title_font = tkfont.Font(family=family, size=core.FONT_SIZE, weight="bold")
         self.btn_font = tkfont.Font(family=family, size=core.FONT_SIZE)
         self.notes = []
         self._save_job = None
+
+    def _set_icon(self):
+        try:
+            if IS_WIN:
+                self.root.iconbitmap(default=core.ICON_ICO)  # también para los diálogos
+            else:
+                self._icon = tk.PhotoImage(file=core.icon_png(64))
+                self.root.iconphoto(True, self._icon)
+        except tk.TclError:
+            pass
+
+    def show_about(self, note):
+        messagebox.showinfo(
+            f"Acerca de {core.APP_NAME}",
+            f"{core.version_text()}\n\nNotas adhesivas ancladas al escritorio.\n{core.APP_URL}",
+            parent=note.top,
+        )
 
     def _pick_family(self):
         families = set(tkfont.families(self.root))
@@ -536,6 +555,8 @@ def start_server():
 
 
 def main():
+    if core.handle_version_flag(sys.argv):
+        return
     if notify_running_instance():
         return
     if win32_desktop:

@@ -21,7 +21,7 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
 
 try:  # para mantener las notas por encima del fondo de iconos (DING)
     gi.require_version("Wnck", "3.0")
@@ -220,6 +220,9 @@ class Note(Gtk.Window):
         menu.append(Gtk.SeparatorMenuItem())
         item = Gtk.MenuItem(label="Nueva nota")
         item.connect("activate", lambda i: self.app.new_note(near=self))
+        menu.append(item)
+        item = Gtk.MenuItem(label=f"Acerca de {core.APP_NAME}")
+        item.connect("activate", lambda i: self.app.show_about(self))
         menu.append(item)
         item = Gtk.MenuItem(label="Cerrar Post-its (las notas se guardan)")
         item.connect("activate", lambda i: self.app.quit())
@@ -487,6 +490,10 @@ class PostItsApp(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        try:
+            Gtk.Window.set_default_icon_from_file(core.icon_png(256))
+        except GLib.Error:
+            Gtk.Window.set_default_icon_name("postits")
         provider = Gtk.CssProvider()
         provider.load_from_data(build_css())
         Gtk.StyleContext.add_provider_for_screen(
@@ -511,6 +518,21 @@ class PostItsApp(Gtk.Application):
             self._open(d)
         if not self.notes:
             self.new_note()
+
+    def show_about(self, parent):
+        dlg = Gtk.AboutDialog(transient_for=parent, modal=True)
+        dlg.set_program_name(core.APP_NAME)
+        dlg.set_version(core.VERSION)
+        dlg.set_comments("Notas adhesivas ancladas al escritorio.")
+        dlg.set_website(core.APP_URL)
+        dlg.set_website_label("Código y changelog")
+        try:
+            dlg.set_logo(GdkPixbuf.Pixbuf.new_from_file(core.icon_png(128)))
+        except GLib.Error:
+            dlg.set_logo_icon_name("postits")
+        dlg.set_keep_above(True)
+        dlg.run()
+        dlg.destroy()
 
     def _on_signal(self):
         self.quit()
@@ -594,8 +616,10 @@ class PostItsApp(Gtk.Application):
 
 
 def main():
+    if core.handle_version_flag(sys.argv):
+        return 0
     GLib.set_prgname("postits")
-    GLib.set_application_name("Post-its")
+    GLib.set_application_name(core.APP_NAME)
     app = PostItsApp()
     return app.run(sys.argv)
 

@@ -9,6 +9,31 @@ import os
 import sys
 import uuid
 
+# Única fuente del número de versión (ver CHANGELOG.md).
+VERSION = "1.1.0"
+APP_NAME = "Post-its"
+APP_URL = "https://github.com/RodriAleo/Post-it-app"
+
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "assets")
+ICON_SVG = os.path.join(ASSETS_DIR, "postits.svg")
+ICON_ICO = os.path.join(ASSETS_DIR, "postits.ico")
+
+
+def icon_png(size=256):
+    return os.path.join(ASSETS_DIR, "png", f"postits-{size}.png")
+
+
+def version_text():
+    return f"{APP_NAME} {VERSION}"
+
+
+def handle_version_flag(argv):
+    """`--version` / `-V`: imprime la versión y devuelve True."""
+    if any(a in ("--version", "-V") for a in argv[1:]):
+        print(version_text())
+        return True
+    return False
+
 FONT_SIZE = 11  # pt
 BORDER = 6      # px sensibles para redimensionar
 CORNER = 16     # px de esquina que redimensionan en diagonal
