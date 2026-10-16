@@ -100,15 +100,16 @@ class Note:
 
         # el título se parte en varias líneas para verse siempre completo
         self.title_label = tk.Label(self.header, text=data["title"], anchor="w", justify="left",
-                                    font=app.title_font, fg=TITLE_COLOR, padx=6, pady=3, cursor="fleur")
+                                    font=app.title_font, fg=TITLE_COLOR, padx=6, pady=3, bd=0, cursor="fleur")
         self.title_label.pack(side="left", fill="x", expand=True)
         self.header.bind("<Configure>", self._update_title_wrap)
         # edición: también multilínea (Enter guarda, Esc cancela)
+        # mismas medidas y color que el label: se edita en el lugar, sin saltos
         self.title_edit = tk.Text(self.header, font=app.title_font, wrap="word", width=1, height=1,
-                                  relief="flat", bd=1, padx=3, pady=1, undo=True,
-                                  bg="#ffffff", fg="#222222", insertbackground="#222222",
-                                  highlightthickness=1, highlightcolor="#999999",
-                                  highlightbackground="#999999")
+                                  relief="flat", bd=0, highlightthickness=0,
+                                  padx=int(self.title_label["padx"]), pady=int(self.title_label["pady"]),
+                                  undo=True, fg=TITLE_COLOR, insertbackground="#222222",
+                                  selectforeground="#000000")
         self.title_edit.bind("<Return>", lambda e: self._finish_rename(True))
         self.title_edit.bind("<KP_Enter>", lambda e: self._finish_rename(True))
         self.title_edit.bind("<Escape>", lambda e: self._finish_rename(False))
@@ -181,6 +182,7 @@ class Note:
         self.tab.config(bg=head, highlightbackground=border, highlightcolor=border)
         self.header.config(bg=head)
         self.title_label.config(bg=head)
+        self.title_edit.config(bg=head, selectbackground=shade(head, 0.8))
         for b in self.buttons:
             b.config(bg=head)
         self.text.config(bg=bg, selectbackground=shade(bg, 0.8))
@@ -223,7 +225,7 @@ class Note:
     # ------------------------------------------------------------ título
     def _update_title_wrap(self, e=None):
         pad = 2 * int(self.title_label["padx"])
-        wrap = max(20, self.header.winfo_width() - pad - 2)
+        wrap = max(20, self.header.winfo_width() - pad)
         if int(self.title_label["wraplength"]) != wrap:
             self.title_label.config(wraplength=wrap)
 
@@ -242,16 +244,27 @@ class Note:
             self.title_edit.after_idle(self._fit_title_edit)
             self.title_edit.edit_modified(False)
 
-    def _start_rename(self):
+    def _start_rename(self, at=None):
+        """Editar el título; `at` = punto del click en pantalla, para poner ahí el cursor."""
         t = self.title_edit
-        self.title_label.pack_forget()
+        lines = max(1, round((self.title_label.winfo_height() - 2 * int(self.title_label["pady"]))
+                             / self.app.title_font.metrics("linespace")))
+        t.config(height=lines)  # mismo alto que el título desde el primer momento
         t.delete("1.0", "end")
         t.insert("1.0", self.data["title"])
         t.edit_reset()
-        t.pack(side="left", fill="x", expand=True, padx=2, pady=2)
+        self.title_label.pack_forget()
+        t.pack(side="left", fill="x", expand=True)
+        t.update_idletasks()
+        idx = "end-1c"
+        if at is not None:
+            x, y = at[0] - t.winfo_rootx(), at[1] - t.winfo_rooty()
+            idx = t.index(f"@{x},{y}")
+            bbox = t.bbox(idx)
+            if bbox and x > bbox[0] + bbox[2] / 2 and t.compare(idx, "<", f"{idx} lineend"):
+                idx = t.index(f"{idx}+1c")  # click en la mitad derecha: cursor después
+        t.mark_set("insert", idx)
         t.focus_force()
-        t.tag_add("sel", "1.0", "end-1c")
-        t.mark_set("insert", "end-1c")
         t.after_idle(self._fit_title_edit)
 
     def _finish_rename(self, accept):
@@ -307,7 +320,7 @@ class Note:
         if self.title_edit.winfo_ismapped():
             self._finish_rename(True)
         # toda la barra del título es "el título": click sin arrastrar = renombrar
-        on_title = e.widget in (self.header, self.title_label)
+        on_title = (e.x_root, e.y_root) if e.widget in (self.header, self.title_label) else None
         self._drag = ["move", None, e.x_root, e.y_root, self._geom(), False, on_title]
         return "break"
 
@@ -333,8 +346,8 @@ class Note:
             return None
         kind, moved, on_title = d[0], d[5], d[6]
         if kind == "move" and not moved:
-            if on_title:
-                self._start_rename()
+            if on_title is not None:
+                self._start_rename(at=on_title)
             else:
                 self.top.focus_force()
         self.app.schedule_save()

@@ -15,11 +15,16 @@ La versión se define en un solo lugar: `VERSION` en
   mover la nota, y la zona transparente a su lado deja pasar los clicks.
 - El título se muestra completo en varias líneas en lugar de cortarse con
   "…", y el campo para renombrarlo también crece en varias líneas.
+- El título se edita en el lugar: el cursor queda donde hiciste click (ya
+  no se selecciona todo), con el mismo color y tamaño, sin mover el
+  contenido de la nota.
 
 ### Corregido
 - Hacer click en el título para renombrarlo a veces no funcionaba (solo
   respondía el borde izquierdo del título); ahora cualquier click sin
   arrastrar sobre la barra del título empieza a editarlo.
+- Linux: el puntero del mouse ya no desaparece mientras escribís en una
+  nota o en el título.
 - Linux: el instalador reemplaza el lanzador `.desktop` en vez de
   reescribirlo, para que GNOME tome el ícono nuevo sin reiniciar la sesión.
 

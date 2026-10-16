@@ -59,10 +59,10 @@ def build_css():
     .note-title {{ font-weight: bold; font-size: {FONT_SIZE}pt; color: #3a3a3a; }}
     .note-title-edit {{
         font-weight: bold; font-size: {FONT_SIZE}pt;
-        border: 1px solid rgba(0,0,0,0.25); border-radius: 3px;
+        border: none; padding: 0; margin: 0; background-color: transparent;
     }}
     .note-title-edit text {{
-        background-color: rgba(255,255,255,0.85); color: #222; caret-color: #222;
+        background-color: transparent; color: #3a3a3a; caret-color: #222;
     }}
     .note-title-edit text selection {{ background-color: rgba(0,0,0,0.20); color: #000; }}
     .note-btn {{
@@ -126,10 +126,31 @@ class WrapLabel(Gtk.Label):
 
 
 class WrapTextView(Gtk.TextView):
-    """TextView que no ensancha la nota: usa el ancho que le den."""
+    """TextView para editar el título en el lugar.
+
+    No ensancha la nota y pide exactamente el alto que ocupa su texto con el
+    ancho de `width_of()` (el del título), así la barra no cambia de tamaño
+    al empezar a editar.
+    """
+
+    def __init__(self, width_of, **kw):
+        super().__init__(**kw)
+        self._width_of = width_of
+        self.get_buffer().connect("changed", lambda b: self.queue_resize())
+
+    def do_get_request_mode(self):
+        return Gtk.SizeRequestMode.CONSTANT_SIZE
 
     def do_get_preferred_width(self):
         return 20, 20
+
+    def do_get_preferred_height(self):
+        buf = self.get_buffer()
+        layout = self.create_pango_layout(buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False) or " ")
+        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
+        layout.set_width(max(20, self._width_of()) * Pango.SCALE)
+        h = layout.get_pixel_size()[1]
+        return h, h
 
 
 class Note(Gtk.Window):
@@ -231,16 +252,14 @@ class Note(Gtk.Window):
         self.title_label.get_style_context().add_class("note-title")
         self.title_label.set_tooltip_text("Click para renombrar · arrastrá la barra para mover")
         # edición: también multilínea (Enter guarda, Esc cancela)
-        self.title_edit = WrapTextView()
+        self.title_edit = WrapTextView(lambda: self.title_stack.get_allocated_width())
         self.title_edit.get_style_context().add_class("note-title-edit")
         self.title_edit.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.title_edit.set_left_margin(4)
-        self.title_edit.set_right_margin(4)
-        self.title_edit.set_top_margin(1)
-        self.title_edit.set_bottom_margin(1)
+        # sin márgenes: el texto queda exactamente donde estaba el título
         self.title_edit.set_accepts_tab(False)
         self.title_edit.connect("focus-out-event", lambda *a: self._finish_rename(True))
         self.title_edit.connect("key-press-event", self._on_title_key)
+        self.title_edit.connect("key-press-event", self._keep_pointer_visible)
         self.title_stack.add_named(self.title_label, "label")
         self.title_stack.add_named(self.title_edit, "entry")
         # el alto/ancho sigue al hijo visible, no al más grande
@@ -262,6 +281,7 @@ class Note(Gtk.Window):
         self.view.set_bottom_margin(4)
         self.view.connect("button-press-event", self._on_text_press)
         self.view.connect("key-press-event", self._on_text_key)
+        self.view.connect("key-press-event", self._keep_pointer_visible)
         scroller.add(self.view)
 
         self.buf = self.view.get_buffer()
@@ -340,13 +360,34 @@ class Note(Gtk.Window):
             self.app.delete_note(self)
 
     # ------------------------------------------------------------ título
-    def _start_rename(self):
+    def _title_offset_at(self, x_root, y_root):
+        """Posición (en caracteres) del título bajo un punto de la pantalla."""
+        label = self.title_label
+        # el label dibuja su layout en get_layout_offsets(), relativo a su GdkWindow
+        wx, wy = label.get_window().get_origin()[1:]
+        ox, oy = label.get_layout_offsets()
+        layout = label.get_layout()
+        _inside, index, trailing = layout.xy_to_index(
+            int((x_root - wx - ox) * Pango.SCALE), int((y_root - wy - oy) * Pango.SCALE)
+        )
+        text = layout.get_text().encode()
+        return len(text[:index].decode("utf-8", "ignore")) + trailing
+
+    def _start_rename(self, at=None):
+        """Editar el título; `at` = punto del click en pantalla, para poner ahí el cursor."""
+        title = self.get_title()
+        offset = len(title)
+        if at is not None:
+            try:
+                offset = min(len(title), max(0, self._title_offset_at(*at)))
+            except (TypeError, ValueError):
+                pass
         tbuf = self.title_edit.get_buffer()
-        tbuf.set_text(self.get_title())
+        tbuf.set_text(title)
         self.title_stack.set_visible_child_name("entry")
         self.present_with_time(Gtk.get_current_event_time())
         self.title_edit.grab_focus()
-        tbuf.select_range(tbuf.get_start_iter(), tbuf.get_end_iter())
+        tbuf.place_cursor(tbuf.get_iter_at_offset(offset))
 
     def _finish_rename(self, accept):
         if self.title_stack.get_visible_child_name() != "entry":
@@ -361,6 +402,18 @@ class Note(Gtk.Window):
             self.app.schedule_save()
         self.title_stack.set_visible_child_name("label")
         self.view.grab_focus()
+        return False
+
+    def _keep_pointer_visible(self, view, event):
+        """GTK esconde el puntero del mouse al escribir; lo volvemos a mostrar."""
+        GLib.idle_add(self._show_pointer, view)
+        return False
+
+    @staticmethod
+    def _show_pointer(view):
+        win = view.get_window(Gtk.TextWindowType.TEXT)
+        if win is not None:
+            win.set_cursor(Gdk.Cursor.new_from_name(view.get_display(), "text"))
         return False
 
     def _on_title_key(self, view, event):
@@ -434,8 +487,9 @@ class Note(Gtk.Window):
             return True
         if self.title_stack.get_visible_child_name() == "entry":
             self._finish_rename(True)
-        # toda la barra del título es "el título": click sin arrastrar = renombrar
-        on_title = widget is self.header
+        # toda la barra del título es "el título": click sin arrastrar = renombrar,
+        # con el cursor donde se hizo click
+        on_title = (event.x_root, event.y_root) if widget is self.header else None
         self._drag = ["move", None, event.x_root, event.y_root, self._geom(), False, on_title]
         return True
 
@@ -464,8 +518,8 @@ class Note(Gtk.Window):
         if d is None or event.button != 1:
             return False
         kind, _edge, *_rest, moved, on_title = d
-        if kind == "move" and not moved and on_title:
-            self._start_rename()
+        if kind == "move" and not moved and on_title is not None:
+            self._start_rename(at=on_title)
         elif kind == "move" and not moved:
             self.present_with_time(event.time)
         self.app.schedule_save()
