@@ -20,7 +20,8 @@ for s in 16 24 32 48 64 128 256; do
 done
 mkdir -p "$ICONS/scalable/apps"
 cp "$REPO/assets/postits.svg" "$ICONS/scalable/apps/postits.svg"
-gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null || true
+gtk-update-icon-cache -q -t -f "$ICONS" 2>/dev/null || true
+touch "$ICONS"
 
 cat > "$HOME/.local/bin/postits" <<WRAPPER
 #!/bin/sh
@@ -28,7 +29,10 @@ exec /usr/bin/python3 "$LIB/linux/postits.py" "\$@"
 WRAPPER
 chmod 755 "$HOME/.local/bin/postits"
 
-cat > "$HOME/.local/share/applications/postits.desktop" <<DESKTOP
+# se escribe a un temporal y se reemplaza: GNOME Shell no siempre detecta
+# cambios hechos sobre el mismo archivo y sigue mostrando el ícono viejo
+APPS="$HOME/.local/share/applications"
+cat > "$APPS/.postits.desktop.tmp" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Post-its
@@ -40,7 +44,11 @@ Categories=Utility;
 StartupNotify=false
 DESKTOP
 
-cp "$HOME/.local/share/applications/postits.desktop" "$HOME/.config/autostart/postits.desktop"
+rm -f "$APPS/postits.desktop"
+mv "$APPS/.postits.desktop.tmp" "$APPS/postits.desktop"
+update-desktop-database -q "$APPS" 2>/dev/null || true
+
+cp "$APPS/postits.desktop" "$HOME/.config/autostart/postits.desktop"
 echo "X-GNOME-Autostart-enabled=true" >> "$HOME/.config/autostart/postits.desktop"
 
 nohup "$HOME/.local/bin/postits" >/dev/null 2>&1 &
