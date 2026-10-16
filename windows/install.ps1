@@ -18,6 +18,13 @@ if (-not $pythonw -or -not (Test-Path $pythonw)) {
     exit 1
 }
 
+# ícono en el área de notificación (opcional: sin esto la app funciona igual)
+$python = Join-Path (Split-Path $pythonw) "python.exe"
+& $python -m pip install --user --quiet --disable-pip-version-check pystray pillow
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "No pude instalar pystray/pillow: la app va a funcionar sin ícono en la barra de tareas." -ForegroundColor Yellow
+}
+
 # cerrar una instancia anterior
 Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" |
     Where-Object { $_.CommandLine -like "*postits.pyw*" } |
@@ -43,5 +50,5 @@ foreach ($folder in [Environment]::GetFolderPath("Startup"), [Environment]::GetF
 }
 
 Start-Process -FilePath $pythonw -ArgumentList "`"$script`""
-$version = & (Join-Path (Split-Path $pythonw) "python.exe") $script --version
+$version = & $python $script --version
 Write-Host "$version instalado. Notas en $env:APPDATA\PostIts\notes.json" -ForegroundColor Green

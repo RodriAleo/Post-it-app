@@ -7,6 +7,16 @@ Todos los cambios importantes de Post-its. Formato basado en
 La versión se define en un solo lugar: `VERSION` en
 [`common/postits_core.py`](common/postits_core.py).
 
+## [1.3.0] - 2026-10-16
+
+### Agregado
+- Ícono de Post-its en la barra mientras la app está corriendo (Linux: barra
+  superior de GNOME vía AppIndicator; Windows: área de notificación vía
+  `pystray`). Su menú muestra la versión y permite crear una nota,
+  **Reiniciar** o **Finalizar** la app (las notas se guardan antes).
+- El instalador de Windows instala `pystray` y `pillow` (opcionales: sin
+  ellos la app funciona igual, sin ícono en la barra).
+
 ## [1.2.0] - 2026-10-16
 
 ### Cambiado
@@ -57,6 +67,7 @@ La versión se define en un solo lugar: `VERSION` en
   confirmación, guardado automático en JSON compartido entre sistemas.
 - Instaladores con inicio automático para ambos sistemas.
 
+[1.3.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/RodriAleo/Post-it-app/releases/tag/v1.0.0

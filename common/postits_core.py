@@ -10,7 +10,7 @@ import sys
 import uuid
 
 # Única fuente del número de versión (ver CHANGELOG.md).
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 APP_NAME = "Post-its"
 APP_URL = "https://github.com/RodriAleo/Post-it-app"
 

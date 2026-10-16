@@ -14,8 +14,11 @@ Ejecutar de nuevo el programa mientras está abierto crea una nota nueva.
 """
 
 import os
+import queue
 import socket
+import subprocess
 import sys
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox
@@ -24,6 +27,12 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "common"))
 import postits_core as core  # noqa: E402
 from postits_core import BOX_OFF, BOXES, COLORS, DEFAULT_COLOR, DRAG_THRESHOLD  # noqa: E402
+
+try:  # ícono en el área de notificación (opcional: pip install pystray pillow)
+    import pystray
+    from PIL import Image
+except ImportError:
+    pystray = None
 
 IS_WIN = sys.platform == "win32"
 if IS_WIN:
@@ -504,6 +513,10 @@ class App:
         self.btn_font = tkfont.Font(family=family, size=core.FONT_SIZE)
         self.notes = []
         self._save_job = None
+        self._closing = False
+        self.restart_requested = False
+        self._tray = None
+        self._tray_actions = queue.Queue()  # el menú del ícono corre en otro hilo
 
     def _set_icon(self):
         try:
@@ -534,8 +547,49 @@ class App:
             self.notes.append(Note(self, d))
         if not self.notes:
             self.new_note()
+        self._start_tray()
         self.root.after(300, self._poll_server)
         self.root.mainloop()
+
+    # ------------------------------------------------------------ bandeja
+    def _start_tray(self):
+        """Ícono en el área de notificación con la versión, Reiniciar y Finalizar."""
+        if pystray is None:
+            return
+        act = self._tray_actions.put
+        menu = pystray.Menu(
+            pystray.MenuItem(core.version_text(), None, enabled=False),  # solo informativo
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Nueva nota", lambda icon, item: act("new")),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Reiniciar", lambda icon, item: act("restart")),
+            pystray.MenuItem("Finalizar", lambda icon, item: act("quit")),
+        )
+        try:
+            image = Image.open(core.icon_png(64))
+            self._tray = pystray.Icon("postits", image, core.version_text(), menu)
+            threading.Thread(target=self._tray.run, daemon=True, name="postits-tray").start()
+        except Exception as e:  # sin bandeja disponible: la app sigue igual
+            print(f"postits: no pude crear el ícono de bandeja: {e}", file=sys.stderr)
+            self._tray = None
+
+    def _process_tray_actions(self):
+        while not self._closing:
+            try:
+                action = self._tray_actions.get_nowait()
+            except queue.Empty:
+                return
+            if action == "new":
+                self.new_note()
+            elif action == "restart":
+                self.restart()
+            elif action == "quit":
+                self.quit()
+
+    def restart(self):
+        """Guarda, cierra y vuelve a abrir la app (ver main())."""
+        self.restart_requested = True
+        self.quit()
 
     # ------------------------------------------------------------ notas
     def new_note(self, near=None):
@@ -561,7 +615,13 @@ class App:
         self.save_now()
 
     def quit(self):
+        if self._closing:
+            return
+        self._closing = True
         self.save_now()
+        if self._tray is not None:
+            self._tray.stop()
+        self.server.close()  # libera la instancia única (importante al reiniciar)
         self.root.destroy()
 
     # ------------------------------------------------------------ guardado
@@ -578,6 +638,9 @@ class App:
 
     # ------------------------------------------------------------ instancia única
     def _poll_server(self):
+        self._process_tray_actions()
+        if self._closing:
+            return
         try:
             while True:
                 conn, _ = self.server.accept()
@@ -625,7 +688,11 @@ def main():
         return
     if win32_desktop:
         win32_desktop.make_dpi_aware()
-    App(start_server()).run()
+    app = App(start_server())
+    app.run()
+    if app.restart_requested:
+        # abrir una instancia nueva (las notas ya se guardaron)
+        subprocess.Popen([sys.executable, os.path.realpath(__file__)] + sys.argv[1:], close_fds=True)
 
 
 if __name__ == "__main__":

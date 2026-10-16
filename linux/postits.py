@@ -28,6 +28,16 @@ try:  # para que la zona al lado de la pestaña no capture clicks
 except ImportError:
     cairo = None
 
+try:  # ícono en la barra superior (bandeja), como las apps en segundo plano
+    gi.require_version("AppIndicator3", "0.1")
+    from gi.repository import AppIndicator3
+except (ImportError, ValueError):
+    try:
+        gi.require_version("AyatanaAppIndicator3", "0.1")
+        from gi.repository import AyatanaAppIndicator3 as AppIndicator3
+    except (ImportError, ValueError):
+        AppIndicator3 = None
+
 try:  # para mantener las notas por encima del fondo de iconos (DING)
     gi.require_version("Wnck", "3.0")
     gi.require_version("GdkX11", "3.0")
@@ -41,7 +51,7 @@ from postits_core import (  # noqa: E402
     BORDER, BOX_OFF, BOXES, COLORS, DEFAULT_COLOR, DRAG_THRESHOLD, FONT_SIZE,
 )
 
-APP_ID = "ar.local.PostIts"
+APP_ID = os.environ.get("POSTITS_APP_ID", "ar.local.PostIts")
 
 
 def css_class(color):
@@ -649,6 +659,8 @@ class PostItsApp(Gtk.Application):
         self.notes = []
         self._save_id = 0
         self._started = False
+        self.restart_requested = False
+        self._indicator = None
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -669,6 +681,39 @@ class PostItsApp(Gtk.Application):
         if Wnck is not None:
             self._wnck = Wnck.Screen.get_default()
             self._wnck.connect("window-stacking-changed", self._on_stacking_changed)
+        self._setup_tray()
+
+    # ------------------------------------------------------------ bandeja
+    def _setup_tray(self):
+        """Ícono en la barra superior con la versión, Reiniciar y Finalizar."""
+        if AppIndicator3 is None:
+            return
+        ind = AppIndicator3.Indicator.new(
+            "postits", core.icon_png(64), AppIndicator3.IndicatorCategory.APPLICATION_STATUS
+        )
+        ind.set_title(core.version_text())
+        menu = Gtk.Menu()
+        version = Gtk.MenuItem(label=core.version_text())
+        version.set_sensitive(False)  # solo informativo
+        menu.append(version)
+        menu.append(Gtk.SeparatorMenuItem())
+        for label, cb in (("Nueva nota", lambda i: self.new_note()),
+                          (None, None),
+                          ("Reiniciar", lambda i: self.restart()),
+                          ("Finalizar", lambda i: self.quit())):
+            item = Gtk.SeparatorMenuItem() if label is None else Gtk.MenuItem(label=label)
+            if cb:
+                item.connect("activate", cb)
+            menu.append(item)
+        menu.show_all()
+        ind.set_menu(menu)
+        ind.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+        self._indicator = ind
+
+    def restart(self):
+        """Guarda, cierra y vuelve a abrir la app (ver main())."""
+        self.restart_requested = True
+        self.quit()
 
     def do_activate(self):
         if self._started:
@@ -783,7 +828,12 @@ def main():
     GLib.set_prgname("postits")
     GLib.set_application_name(core.APP_NAME)
     app = PostItsApp()
-    return app.run(sys.argv)
+    status = app.run(sys.argv)
+    if app.restart_requested:
+        # reemplazar el proceso por uno nuevo (las notas ya se guardaron)
+        script = os.path.realpath(__file__)
+        os.execv(sys.executable, [sys.executable, script] + sys.argv[1:])
+    return status
 
 
 if __name__ == "__main__":

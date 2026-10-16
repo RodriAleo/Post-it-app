@@ -20,6 +20,7 @@ escritorio (Super+D / Win+D, o sin ventanas encima).
 | Opciones | En la pestaña de arriba a la derecha de cada nota |
 | Nueva nota | Botón **+**, o abrir la app otra vez |
 | Color / salir | Botón **⋮** |
+| Versión, reiniciar o finalizar | Ícono de Post-its en la barra (arriba a la derecha en Ubuntu, área de notificación en Windows) |
 | Borrar nota | Botón **×** (si tiene texto, pide confirmación) |
 
 Todo se guarda solo: texto, título, posición, tamaño y color.
@@ -28,7 +29,9 @@ Todo se guarda solo: texto, título, posición, tamaño y color.
 
 ### Linux (Ubuntu / GNOME en X11)
 
-Usa Python 3 y GTK 3, que ya vienen con Ubuntu.
+Usa Python 3 y GTK 3, que ya vienen con Ubuntu. El ícono en la barra superior
+usa AppIndicator (`gir1.2-appindicator3-0.1` y la extensión de indicadores de
+Ubuntu, ambos incluidos por defecto).
 
 ```bash
 ./linux/install.sh
@@ -44,7 +47,8 @@ Para quitarlo: `./linux/uninstall.sh`.
 ### Windows 10 / 11
 
 Necesita [Python 3](https://www.python.org/downloads/) (el instalador oficial
-ya trae Tkinter). Después, doble click en:
+ya trae Tkinter). El instalador agrega `pystray` y `pillow` con pip para el
+ícono en el área de notificación. Después, doble click en:
 
 ```
 windows\install.bat
