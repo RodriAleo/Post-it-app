@@ -39,6 +39,9 @@ else:
                "tl": "top_left_corner", "tr": "top_right_corner",
                "bl": "bottom_left_corner", "br": "bottom_right_corner"}
 
+# color "invisible" de la ventana (a la izquierda de la pestaña): en Windows se
+# vuelve transparente y los clicks pasan al escritorio
+TRANSPARENT = "#ff00fe" if IS_WIN else "#808080"
 TITLE_COLOR = "#3a3a3a"
 BTN_COLOR = "#4a4a4a"
 HANDSHAKE = b"postits-new\n"
@@ -62,6 +65,23 @@ class Note:
         top.overrideredirect(True)
         top.title(data["title"])
         top.geometry(f'{data["w"]}x{data["h"]}+{data["x"]}+{data["y"]}')
+        top.config(bg=TRANSPARENT)
+        if IS_WIN:
+            top.attributes("-transparentcolor", TRANSPARENT)
+
+        # --- pestaña arriba a la derecha con las opciones (también sirve para mover)
+        self.tab_row = tk.Frame(top, bd=0, bg=TRANSPARENT)
+        self.tab_row.pack(fill="x")
+        self.tab = tk.Frame(self.tab_row, bd=0, highlightthickness=1, padx=2, cursor="fleur")
+        self.tab.pack(side="right")
+        self.buttons = []
+        self._add_btn("×", "Borrar nota", self._confirm_delete)
+        self.menu_btn = self._add_btn("⋮", "Color y opciones", self._show_menu)
+        self._add_btn("+", "Nueva nota", lambda: self.app.new_note(near=self))
+        self._add_btn(core.BOX_ON, "Checkbox en la línea (Ctrl+T)", self.toggle_checkbox_lines)
+        self.tab.bind("<ButtonPress-1>", self._on_header_press)
+        self.tab.bind("<B1-Motion>", self._on_drag)
+        self.tab.bind("<ButtonRelease-1>", self._on_release)
 
         # --- marco externo: su margen es la zona de redimensionado
         self.outer = tk.Frame(top, bd=0, highlightthickness=1)
@@ -74,26 +94,28 @@ class Note:
         self.inner = tk.Frame(self.outer, bd=0)
         self.inner.pack(fill="both", expand=True, padx=core.BORDER - 1, pady=core.BORDER - 1)
 
-        # --- barra superior
+        # --- barra del título (mover + renombrar)
         self.header = tk.Frame(self.inner, bd=0, cursor="fleur")
         self.header.pack(fill="x")
-        self.buttons = []
-        self._add_btn("×", "Borrar nota", self._confirm_delete)
-        self.menu_btn = self._add_btn("⋮", "Color y opciones", self._show_menu)
-        self._add_btn("+", "Nueva nota", lambda: self.app.new_note(near=self))
-        self._add_btn(core.BOX_ON, "Checkbox en la línea (Ctrl+T)", self.toggle_checkbox_lines)
 
-        self.title_label = tk.Label(self.header, text=data["title"], anchor="w", font=app.title_font,
-                                    fg=TITLE_COLOR, padx=4, pady=2, cursor="fleur")
+        # el título se parte en varias líneas para verse siempre completo
+        self.title_label = tk.Label(self.header, text=data["title"], anchor="w", justify="left",
+                                    font=app.title_font, fg=TITLE_COLOR, padx=6, pady=3, cursor="fleur")
         self.title_label.pack(side="left", fill="x", expand=True)
-        self.title_entry = tk.Entry(self.header, font=app.title_font, relief="flat", bd=1,
-                                    bg="#ffffff", fg="#222222", insertbackground="#222222",
-                                    highlightthickness=1, highlightcolor="#999999",
-                                    highlightbackground="#999999")
-        self.title_entry.bind("<Return>", lambda e: self._finish_rename(True))
-        self.title_entry.bind("<KP_Enter>", lambda e: self._finish_rename(True))
-        self.title_entry.bind("<Escape>", lambda e: self._finish_rename(False))
-        self.title_entry.bind("<FocusOut>", lambda e: self._finish_rename(True))
+        self.header.bind("<Configure>", self._update_title_wrap)
+        # edición: también multilínea (Enter guarda, Esc cancela)
+        self.title_edit = tk.Text(self.header, font=app.title_font, wrap="word", width=1, height=1,
+                                  relief="flat", bd=1, padx=3, pady=1, undo=True,
+                                  bg="#ffffff", fg="#222222", insertbackground="#222222",
+                                  highlightthickness=1, highlightcolor="#999999",
+                                  highlightbackground="#999999")
+        self.title_edit.bind("<Return>", lambda e: self._finish_rename(True))
+        self.title_edit.bind("<KP_Enter>", lambda e: self._finish_rename(True))
+        self.title_edit.bind("<Escape>", lambda e: self._finish_rename(False))
+        self.title_edit.bind("<FocusOut>", lambda e: self._finish_rename(True))
+        self.title_edit.bind("<Tab>", lambda e: "break")
+        self.title_edit.bind("<<Modified>>", self._on_title_modified)
+        self.title_edit.bind("<Configure>", lambda e: self._fit_title_edit())
 
         for w in (self.header, self.title_label):
             w.bind("<ButtonPress-1>", self._on_header_press)
@@ -133,7 +155,7 @@ class Note:
 
     # ------------------------------------------------------------ helpers UI
     def _add_btn(self, label, tip, cb):
-        b = tk.Label(self.header, text=label, font=self.app.btn_font, fg=BTN_COLOR, padx=5, cursor="hand2")
+        b = tk.Label(self.tab, text=label, font=self.app.btn_font, fg=BTN_COLOR, padx=5, cursor="hand2")
         b.pack(side="right")
         b.bind("<Enter>", lambda e: b.config(bg=shade(self._head, 0.9)))
         b.bind("<Leave>", lambda e: b.config(bg=self._head))
@@ -156,6 +178,7 @@ class Note:
         self.data["color"] = color
         self.outer.config(bg=bg, highlightbackground=border, highlightcolor=border)
         self.inner.config(bg=bg)
+        self.tab.config(bg=head, highlightbackground=border, highlightcolor=border)
         self.header.config(bg=head)
         self.title_label.config(bg=head)
         for b in self.buttons:
@@ -198,25 +221,50 @@ class Note:
         self.top.destroy()
 
     # ------------------------------------------------------------ título
+    def _update_title_wrap(self, e=None):
+        pad = 2 * int(self.title_label["padx"])
+        wrap = max(20, self.header.winfo_width() - pad - 2)
+        if int(self.title_label["wraplength"]) != wrap:
+            self.title_label.config(wraplength=wrap)
+
+    def _fit_title_edit(self):
+        """Alto del campo de edición = cantidad de líneas que ocupa el título."""
+        t = self.title_edit
+        try:
+            lines = int(t.tk.call(t._w, "count", "-displaylines", "1.0", "end-1c")) + 1
+        except (tk.TclError, ValueError):
+            lines = 1
+        if int(t["height"]) != lines:
+            t.config(height=lines)
+
+    def _on_title_modified(self, e):
+        if self.title_edit.edit_modified():
+            self.title_edit.after_idle(self._fit_title_edit)
+            self.title_edit.edit_modified(False)
+
     def _start_rename(self):
+        t = self.title_edit
         self.title_label.pack_forget()
-        self.title_entry.delete(0, "end")
-        self.title_entry.insert(0, self.data["title"])
-        self.title_entry.pack(side="left", fill="x", expand=True, padx=2, pady=2)
-        self.title_entry.focus_force()
-        self.title_entry.select_range(0, "end")
-        self.title_entry.icursor("end")
+        t.delete("1.0", "end")
+        t.insert("1.0", self.data["title"])
+        t.edit_reset()
+        t.pack(side="left", fill="x", expand=True, padx=2, pady=2)
+        t.focus_force()
+        t.tag_add("sel", "1.0", "end-1c")
+        t.mark_set("insert", "end-1c")
+        t.after_idle(self._fit_title_edit)
 
     def _finish_rename(self, accept):
-        if not self.title_entry.winfo_ismapped():
+        if not self.title_edit.winfo_ismapped():
             return "break"
         if accept:
-            title = self.title_entry.get().strip() or "Nota"
+            raw = self.title_edit.get("1.0", "end-1c")
+            title = " ".join(raw.split()) or "Nota"  # sin saltos de línea pegados
             self.data["title"] = title
             self.title_label.config(text=title)
             self.top.title(title)
             self.app.schedule_save()
-        self.title_entry.pack_forget()
+        self.title_edit.pack_forget()
         self.title_label.pack(side="left", fill="x", expand=True)
         self.text.focus_set()
         return "break"
@@ -227,8 +275,13 @@ class Note:
         return t.winfo_rootx(), t.winfo_rooty(), t.winfo_width(), t.winfo_height()
 
     def _edge_at(self, e):
+        """Borde bajo el puntero, medido sobre la nota (sin contar la pestaña)."""
         x, y, w, h = self._geom()
-        return core.edge_at(e.x_root - x, e.y_root - y, w, h)
+        tab_h = self.tab_row.winfo_height()
+        rel_y = e.y_root - y - tab_h
+        if rel_y < 0:
+            return None
+        return core.edge_at(e.x_root - x, rel_y, w, h - tab_h)
 
     def _set_cursor(self, edge):
         cur = CURSORS[edge] if edge else ""
@@ -251,12 +304,12 @@ class Note:
         if edge:  # la barra llega hasta el borde: dejar que redimensione
             self._drag = ["resize", edge, e.x_root, e.y_root, self._geom(), False, False]
             return "break"
-        if self.title_entry.winfo_ismapped():
+        if self.title_edit.winfo_ismapped():
             self._finish_rename(True)
         on_title = False
         if e.widget is self.title_label:
-            text_w = self.app.title_font.measure(self.data["title"]) + 2 * int(self.title_label["padx"])
-            on_title = e.x <= text_w + 4
+            text_w = min(self.app.title_font.measure(self.data["title"]), int(self.title_label["wraplength"]))
+            on_title = e.x <= text_w + 2 * int(self.title_label["padx"]) + 4
         self._drag = ["move", None, e.x_root, e.y_root, self._geom(), False, on_title]
         return "break"
 

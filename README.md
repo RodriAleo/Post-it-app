@@ -10,13 +10,14 @@ escritorio (Super+D / Win+D, o sin ventanas encima).
 
 | Acción | Cómo |
 |---|---|
-| Mover una nota | Arrastrar desde la barra de arriba |
-| Renombrar | Click en el título (Enter guarda, Esc cancela) |
+| Mover una nota | Arrastrar desde la barra del título o la pestaña |
+| Renombrar | Click en el título (Enter guarda, Esc cancela); los títulos largos se ven completos en varias líneas |
 | Cambiar tamaño | Arrastrar desde cualquier borde o esquina |
 | Escribir | Click adentro de la nota (letra tamaño 11) |
-| Poner/quitar checkbox | Botón ☑ o **Ctrl+T** (sobre la línea actual o las líneas seleccionadas) |
+| Poner/quitar checkbox | Botón ☑ de la pestaña o **Ctrl+T** (sobre la línea actual o las líneas seleccionadas) |
 | Marcar/desmarcar | Click sobre el ☐ / ☑ (la línea marcada se tacha) |
 | Lista de tareas | Enter en una línea con checkbox crea otra; Enter en un checkbox vacío termina la lista |
+| Opciones | En la pestaña de arriba a la derecha de cada nota |
 | Nueva nota | Botón **+**, o abrir la app otra vez |
 | Color / salir | Botón **⋮** |
 | Borrar nota | Botón **×** (si tiene texto, pide confirmación) |

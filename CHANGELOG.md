@@ -7,6 +7,19 @@ Todos los cambios importantes de Post-its. Formato basado en
 La versión se define en un solo lugar: `VERSION` en
 [`common/postits_core.py`](common/postits_core.py).
 
+## [1.2.0] - 2026-10-16
+
+### Cambiado
+- Los botones (☑ + ⋮ ×) pasan a una pestaña arriba a la derecha de la nota;
+  el título ocupa todo el ancho de la barra. La pestaña también sirve para
+  mover la nota, y la zona transparente a su lado deja pasar los clicks.
+- El título se muestra completo en varias líneas en lugar de cortarse con
+  "…", y el campo para renombrarlo también crece en varias líneas.
+
+### Corregido
+- Linux: el instalador reemplaza el lanzador `.desktop` en vez de
+  reescribirlo, para que GNOME tome el ícono nuevo sin reiniciar la sesión.
+
 ## [1.1.0] - 2026-10-16
 
 ### Agregado
@@ -36,5 +49,6 @@ La versión se define en un solo lugar: `VERSION` en
   confirmación, guardado automático en JSON compartido entre sistemas.
 - Instaladores con inicio automático para ambos sistemas.
 
+[1.2.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/RodriAleo/Post-it-app/releases/tag/v1.0.0

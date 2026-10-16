@@ -23,6 +23,11 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
 
+try:  # para que la zona al lado de la pestaña no capture clicks
+    import cairo
+except ImportError:
+    cairo = None
+
 try:  # para mantener las notas por encima del fondo de iconos (DING)
     gi.require_version("Wnck", "3.0")
     gi.require_version("GdkX11", "3.0")
@@ -45,14 +50,21 @@ def css_class(color):
 
 def build_css():
     css = f"""
+    window.note-window {{ background-color: transparent; }}
     .note-outer {{ border-width: 1px; border-style: solid; }}
-    .note-title {{ font-weight: bold; font-size: {FONT_SIZE}pt; color: #3a3a3a; }}
-    .note-title-entry {{
-        font-weight: bold; font-size: {FONT_SIZE}pt; color: #222;
-        background: rgba(255,255,255,0.75); border: 1px solid rgba(0,0,0,0.25);
-        border-radius: 3px; min-height: 0; padding: 1px 4px; box-shadow: none;
-        caret-color: #222;
+    .note-tab {{
+        border-width: 1px 1px 0 1px; border-style: solid;
+        border-radius: 6px 6px 0 0; padding: 1px 3px 0 3px;
     }}
+    .note-title {{ font-weight: bold; font-size: {FONT_SIZE}pt; color: #3a3a3a; }}
+    .note-title-edit {{
+        font-weight: bold; font-size: {FONT_SIZE}pt;
+        border: 1px solid rgba(0,0,0,0.25); border-radius: 3px;
+    }}
+    .note-title-edit text {{
+        background-color: rgba(255,255,255,0.85); color: #222; caret-color: #222;
+    }}
+    .note-title-edit text selection {{ background-color: rgba(0,0,0,0.20); color: #000; }}
     .note-btn {{
         padding: 0 5px; min-height: 0; min-width: 0; border: none;
         background: transparent; box-shadow: none; color: #4a4a4a;
@@ -69,13 +81,55 @@ def build_css():
     for name, (bg, head, border) in COLORS.items():
         c = css_class(name)
         css += f"""
-        .{c}.note-outer {{ background-color: {bg}; border-color: {border}; }}
+        .{c} .note-outer {{ background-color: {bg}; border-color: {border}; }}
+        .{c} .note-tab {{ background-color: {head}; border-color: {border}; }}
         .{c} .note-header {{ background-color: {head}; }}
         .{c} .note-body, .{c} .note-body text, .{c} scrolledwindow {{
             background-color: {bg};
         }}
         """
     return css.encode()
+
+
+class WrapLabel(Gtk.Label):
+    """Label multilínea cuyo alto depende del ancho que tiene de verdad.
+
+    Un Gtk.Label con wrap le informa a la ventana el alto que tendría con el
+    ancho mínimo (una palabra por línea), y la ventana crece de más. Este
+    calcula el alto con el ancho asignado y no pide ancho propio.
+    """
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._width = 0
+        self.set_line_wrap(True)
+        self.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.connect("size-allocate", self._on_allocate)
+
+    def do_get_request_mode(self):
+        return Gtk.SizeRequestMode.CONSTANT_SIZE
+
+    def do_get_preferred_width(self):
+        return 20, 20
+
+    def do_get_preferred_height(self):
+        layout = self.create_pango_layout(self.get_text())
+        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
+        layout.set_width(max(20, self._width or 200) * Pango.SCALE)
+        h = layout.get_pixel_size()[1]
+        return h, h
+
+    def _on_allocate(self, widget, alloc):
+        if alloc.width != self._width:
+            self._width = alloc.width
+            GLib.idle_add(self.queue_resize)
+
+
+class WrapTextView(Gtk.TextView):
+    """TextView que no ensancha la nota: usa el ancho que le den."""
+
+    def do_get_preferred_width(self):
+        return 20, 20
 
 
 class Note(Gtk.Window):
@@ -95,6 +149,39 @@ class Note(Gtk.Window):
         self.set_default_size(data["w"], data["h"])
         self.move(data["x"], data["y"])
 
+        # ventana con transparencia: a la izquierda de la pestaña se ve el escritorio
+        self.get_style_context().add_class("note-window")
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual is not None and screen.is_composited():
+            self.set_visual(visual)
+
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(root)
+
+        # --- pestaña arriba a la derecha con las opciones (también sirve para mover)
+        self.tab_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        root.pack_start(self.tab_row, False, False, 0)
+        self.tab = Gtk.EventBox()
+        self.tab.get_style_context().add_class("note-tab")
+        self.tab.add_events(
+            Gdk.EventMask.POINTER_MOTION_MASK
+            | Gdk.EventMask.BUTTON_PRESS_MASK
+            | Gdk.EventMask.BUTTON_RELEASE_MASK
+        )
+        self.tab.connect("button-press-event", self._on_header_press)
+        self.tab.connect("motion-notify-event", self._on_pointer_motion)
+        self.tab.connect("button-release-event", self._on_release)
+        self.tab.connect("realize", self._on_header_realize)
+        self.tab_row.pack_end(self.tab, False, False, 0)
+        tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=1)
+        self.tab.add(tab_box)
+        self._add_btn(tab_box, core.BOX_ON, "Checkbox en la línea (Ctrl+T)", lambda b: self.toggle_checkbox_lines())
+        self._add_btn(tab_box, "+", "Nueva nota", lambda b: self.app.new_note(near=self))
+        self.menu_btn = self._add_btn(tab_box, "⋮", "Color y opciones", self._show_menu)
+        self._add_btn(tab_box, "×", "Borrar nota", lambda b: self._confirm_delete())
+        self.connect("size-allocate", self._update_input_shape)
+
         # --- contenedor externo: su margen es la zona de redimensionado
         self.outer = Gtk.EventBox()
         self.outer.get_style_context().add_class("note-outer")
@@ -108,7 +195,7 @@ class Note(Gtk.Window):
         self.outer.connect("motion-notify-event", self._on_pointer_motion)
         self.outer.connect("button-release-event", self._on_release)
         self.outer.connect("leave-notify-event", lambda *a: self._set_cursor(None))
-        self.add(self.outer)
+        root.pack_start(self.outer, True, True, 0)
 
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         vbox.set_margin_start(BORDER - 1)
@@ -117,7 +204,7 @@ class Note(Gtk.Window):
         vbox.set_margin_top(BORDER - 1)
         self.outer.add(vbox)
 
-        # --- barra superior (mover + título + botones)
+        # --- barra del título (mover + renombrar)
         self.header = Gtk.EventBox()
         self.header.get_style_context().add_class("note-header")
         self.header.add_events(
@@ -133,32 +220,33 @@ class Note(Gtk.Window):
 
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
         hbox.set_margin_start(6)
-        hbox.set_margin_end(2)
-        hbox.set_margin_top(2)
-        hbox.set_margin_bottom(2)
+        hbox.set_margin_end(6)
+        hbox.set_margin_top(3)
+        hbox.set_margin_bottom(3)
         self.header.add(hbox)
 
         self.title_stack = Gtk.Stack()
-        self.title_label = Gtk.Label(label=self.get_title(), xalign=0)
-        self.title_label.set_ellipsize(Pango.EllipsizeMode.END)
+        # el título se parte en varias líneas para verse siempre completo
+        self.title_label = WrapLabel(label=self.get_title(), xalign=0)
         self.title_label.get_style_context().add_class("note-title")
         self.title_label.set_tooltip_text("Click para renombrar · arrastrá la barra para mover")
-        self.title_entry = Gtk.Entry()
-        self.title_entry.get_style_context().add_class("note-title-entry")
-        self.title_entry.set_width_chars(4)
-        self.title_entry.connect("activate", lambda e: self._finish_rename(True))
-        self.title_entry.connect("focus-out-event", lambda *a: self._finish_rename(True))
-        self.title_entry.connect("key-press-event", self._on_title_key)
+        # edición: también multilínea (Enter guarda, Esc cancela)
+        self.title_edit = WrapTextView()
+        self.title_edit.get_style_context().add_class("note-title-edit")
+        self.title_edit.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.title_edit.set_left_margin(4)
+        self.title_edit.set_right_margin(4)
+        self.title_edit.set_top_margin(1)
+        self.title_edit.set_bottom_margin(1)
+        self.title_edit.set_accepts_tab(False)
+        self.title_edit.connect("focus-out-event", lambda *a: self._finish_rename(True))
+        self.title_edit.connect("key-press-event", self._on_title_key)
         self.title_stack.add_named(self.title_label, "label")
-        self.title_stack.add_named(self.title_entry, "entry")
-        # el label no debe hacer que la ventana crezca
+        self.title_stack.add_named(self.title_edit, "entry")
+        # el alto/ancho sigue al hijo visible, no al más grande
         self.title_stack.set_hhomogeneous(False)
+        self.title_stack.set_vhomogeneous(False)
         hbox.pack_start(self.title_stack, True, True, 0)
-
-        self._add_btn(hbox, core.BOX_ON, "Checkbox en la línea (Ctrl+T)", lambda b: self.toggle_checkbox_lines())
-        self._add_btn(hbox, "+", "Nueva nota", lambda b: self.app.new_note(near=self))
-        self.menu_btn = self._add_btn(hbox, "⋮", "Color y opciones", self._show_menu)
-        self._add_btn(hbox, "×", "Borrar nota", lambda b: self._confirm_delete())
 
         # --- cuerpo
         scroller = Gtk.ScrolledWindow()
@@ -201,7 +289,7 @@ class Note(Gtk.Window):
     def _apply_color(self, color):
         if color not in COLORS:
             color = DEFAULT_COLOR
-        ctx = self.outer.get_style_context()
+        ctx = self.get_style_context()
         for name in COLORS:
             ctx.remove_class(css_class(name))
         ctx.add_class(css_class(color))
@@ -253,17 +341,20 @@ class Note(Gtk.Window):
 
     # ------------------------------------------------------------ título
     def _start_rename(self):
-        self.title_entry.set_text(self.get_title())
+        tbuf = self.title_edit.get_buffer()
+        tbuf.set_text(self.get_title())
         self.title_stack.set_visible_child_name("entry")
         self.present_with_time(Gtk.get_current_event_time())
-        self.title_entry.grab_focus()
-        self.title_entry.select_region(0, -1)
+        self.title_edit.grab_focus()
+        tbuf.select_range(tbuf.get_start_iter(), tbuf.get_end_iter())
 
     def _finish_rename(self, accept):
         if self.title_stack.get_visible_child_name() != "entry":
             return False
         if accept:
-            title = self.title_entry.get_text().strip() or "Nota"
+            tbuf = self.title_edit.get_buffer()
+            raw = tbuf.get_text(tbuf.get_start_iter(), tbuf.get_end_iter(), False)
+            title = " ".join(raw.split()) or "Nota"  # sin saltos de línea pegados
             self.set_title(title)
             self.title_label.set_text(title)
             self.data["title"] = title
@@ -272,9 +363,12 @@ class Note(Gtk.Window):
         self.view.grab_focus()
         return False
 
-    def _on_title_key(self, entry, event):
+    def _on_title_key(self, view, event):
         if event.keyval == Gdk.KEY_Escape:
             self._finish_rename(False)
+            return True
+        if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            self._finish_rename(True)
             return True
         return False
 
@@ -297,8 +391,25 @@ class Note(Gtk.Window):
         win.set_cursor(cur)
 
     def _edge_at(self, x_root, y_root):
+        """Borde bajo el puntero, medido sobre la nota (sin contar la pestaña)."""
         ox, oy = self.get_window().get_origin()[1:]
-        return core.edge_at(x_root - ox, y_root - oy, *self.get_size())
+        tab_h = self.tab_row.get_allocated_height()
+        w, h = self.get_size()
+        y = y_root - oy - tab_h
+        if y < 0:
+            return None
+        return core.edge_at(x_root - ox, y, w, h - tab_h)
+
+    def _update_input_shape(self, widget, alloc):
+        """La zona transparente al lado de la pestaña deja pasar los clicks al escritorio."""
+        if cairo is None or self.get_window() is None:
+            return
+        w, h = alloc.width, alloc.height
+        tab_h = self.tab_row.get_allocated_height()
+        tab_w = self.tab.get_allocated_width()
+        region = cairo.Region(cairo.RectangleInt(0, tab_h, w, max(0, h - tab_h)))
+        region.union(cairo.RectangleInt(max(0, w - tab_w), 0, tab_w, tab_h))
+        self.input_shape_combine_region(region)
 
     def _geom(self):
         x, y = self.get_position()
