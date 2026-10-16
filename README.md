@@ -14,11 +14,13 @@ escritorio (Super+D / Win+D, o sin ventanas encima).
 | Renombrar | Click en la barra del título (Enter guarda, Esc cancela); los títulos largos se ven completos en varias líneas |
 | Cambiar tamaño | Arrastrar desde cualquier borde o esquina |
 | Escribir | Click adentro de la nota (letra tamaño 11) |
-| Poner/quitar checkbox | Botón ☑ de la pestaña o **Ctrl+T** (sobre la línea actual o las líneas seleccionadas) |
+| Checkbox / ítem | Al inicio de una línea: `[] ` → ☐, `[x] ` → ☑, `* ` → • (botón **?** de la pestaña para ver la ayuda) |
+| Poner/quitar checkbox | **Ctrl+T** sobre la línea actual o las líneas seleccionadas |
 | Marcar/desmarcar | Click sobre el ☐ / ☑ (la línea marcada se tacha) |
-| Lista de tareas | Enter en una línea con checkbox crea otra; Enter en un checkbox vacío termina la lista |
+| Listas | Enter en una línea con checkbox o ítem crea otra; Enter en uno vacío termina la lista |
+| Fijar nota | Botón 📌 de la pestaña: la nota queda siempre visible, encima de las ventanas (otra vez para volverla al escritorio) |
 | Opciones | En la pestaña de arriba a la derecha de cada nota |
-| Nueva nota | Botón **+**, o abrir la app otra vez |
+| Nueva nota | Menú **⋮**, ícono de la barra, o abrir la app otra vez |
 | Color / salir | Botón **⋮** |
 | Versión, reiniciar o finalizar | Ícono de Post-its en la barra (arriba a la derecha en Ubuntu, área de notificación en Windows) |
 | Borrar nota | Botón **×** (si tiene texto, pide confirmación) |

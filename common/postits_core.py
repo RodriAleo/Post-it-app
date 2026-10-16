@@ -23,6 +23,16 @@ def icon_png(size=256):
     return os.path.join(ASSETS_DIR, "png", f"postits-{size}.png")
 
 
+def pin_png(pinned, size=16):
+    return os.path.join(ASSETS_DIR, "png", f"pin-{'on' if pinned else 'off'}-{size}.png")
+
+
+PIN_TIP = {
+    False: "Fijar: mantener la nota siempre visible, encima de las ventanas",
+    True: "Desfijar: volver la nota al escritorio",
+}
+
+
 def version_text():
     return f"{APP_NAME} {VERSION}"
 
@@ -45,6 +55,20 @@ SAVE_DELAY_MS = 600
 BOX_OFF = "☐"
 BOX_ON = "☑"
 BOXES = (BOX_OFF, BOX_ON)
+BULLET = "•"
+
+# lo que se escribe al inicio de una línea (seguido de espacio) y en qué se convierte
+AUTOFORMAT = {"[]": BOX_OFF, "[ ]": BOX_OFF, "[x]": BOX_ON, "[X]": BOX_ON, "*": BULLET}
+
+# texto del botón de ayuda (?)
+HELP = [
+    ("[] y espacio", "pone un checkbox ☐"),
+    ("[x] y espacio", "checkbox ya marcado ☑"),
+    ("* y espacio", "ítem de lista •"),
+    ("Click en ☐", "marcar / desmarcar (se tacha)"),
+    ("Enter", "sigue la lista; en uno vacío la termina"),
+    ("Ctrl+T", "poner / quitar checkbox en la línea"),
+]
 
 # nombre: (fondo, barra, borde)
 COLORS = {
@@ -67,6 +91,28 @@ def prefix_len(line):
     if line[:1] in BOXES:
         return 2 if line[1:2] == " " else 1
     return 0
+
+
+def list_prefix(line):
+    """Prefijo de lista de una línea: (carácter, largo) o (None, 0).
+
+    Sirve para checkboxes (☐/☑) e ítems (•); Enter continúa la lista con
+    `continuation_of()`.
+    """
+    if line[:1] in BOXES or line[:1] == BULLET:
+        return line[0], 2 if line[1:2] == " " else 1
+    return None, 0
+
+
+def continuation_of(char):
+    return BULLET if char == BULLET else BOX_OFF
+
+
+def autoformat(before_cursor):
+    """Si lo escrito desde el inicio de la línea es un atajo ("[]", "*"...),
+    devuelve el prefijo por el que se reemplaza al apretar espacio."""
+    char = AUTOFORMAT.get(before_cursor)
+    return f"{char} " if char else None
 
 
 def all_have_box(lines):
@@ -130,6 +176,7 @@ def new_note_data(x, y, color=DEFAULT_COLOR):
     return {
         "id": uuid.uuid4().hex, "title": "Nota", "text": "",
         "x": int(x), "y": int(y), "w": DEFAULT_W, "h": DEFAULT_H, "color": color,
+        "pinned": False,
     }
 
 
@@ -148,6 +195,7 @@ def load_notes():
         d.setdefault("id", uuid.uuid4().hex)
         d.setdefault("title", "Nota")
         d.setdefault("text", "")
+        d["pinned"] = bool(d.get("pinned", False))
         if d.get("color") not in COLORS:
             d["color"] = DEFAULT_COLOR
         d["x"], d["y"] = int(d.get("x", 100)), int(d.get("y", 100))

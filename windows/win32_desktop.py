@@ -26,6 +26,8 @@ WS_EX_APPWINDOW = 0x00040000
 WM_ACTIVATE = 0x0006
 WA_INACTIVE = 0
 HWND_BOTTOM = 1
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
 SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOACTIVATE = 0x0010
@@ -50,6 +52,7 @@ _GetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int]
 _GetWindowLongPtr.restype = LONG_PTR
 
 _subclassed = {}  # hwnd -> (nuevo wndproc, wndproc original); evita que el GC los libere
+_pinned = set()   # notas fijadas: siempre encima, no vuelven al fondo
 
 
 def make_dpi_aware():
@@ -87,7 +90,7 @@ def pin_to_desktop(tk_window):
         old = _GetWindowLongPtr(hwnd, GWLP_WNDPROC)
 
         def proc(h, msg, wparam, lparam):
-            if msg == WM_ACTIVATE and (wparam & 0xFFFF) == WA_INACTIVE:
+            if msg == WM_ACTIVATE and (wparam & 0xFFFF) == WA_INACTIVE and h not in _pinned:
                 # al pasar a otra ventana, la nota vuelve al fondo
                 user32.SetWindowPos(h, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
             return user32.CallWindowProcW(old, h, msg, wparam, lparam)
@@ -99,9 +102,28 @@ def pin_to_desktop(tk_window):
     send_to_bottom(tk_window)
 
 
+def set_pinned(tk_window, pinned):
+    """Fijada: siempre encima de todas las ventanas (sin dueño Progman).
+    Desfijada: vuelve a ser una nota del escritorio."""
+    hwnd = _hwnd(tk_window)
+    flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+    if pinned:
+        _pinned.add(hwnd)
+        _SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, 0)
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+    else:
+        _pinned.discard(hwnd)
+        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        progman = user32.FindWindowW("Progman", None)
+        if progman:
+            _SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, progman)
+        send_to_bottom(tk_window)
+
+
 def unpin(tk_window):
     """Restaurar el wndproc original antes de destruir la ventana."""
     hwnd = _hwnd(tk_window)
+    _pinned.discard(hwnd)
     entry = _subclassed.pop(hwnd, None)
     if entry:
         _SetWindowLongPtr(hwnd, GWLP_WNDPROC, entry[1])

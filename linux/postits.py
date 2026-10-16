@@ -173,7 +173,8 @@ class Note(Gtk.Window):
 
         self.set_title(data.get("title") or "Nota")
         self.set_decorated(False)
-        self.set_type_hint(Gdk.WindowTypeHint.DESKTOP)
+        self.pinned = data.get("pinned", False)
+        self._apply_layer()
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.stick()
@@ -207,8 +208,11 @@ class Note(Gtk.Window):
         self.tab_row.pack_end(self.tab, False, False, 0)
         tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=1)
         self.tab.add(tab_box)
-        self._add_btn(tab_box, core.BOX_ON, "Checkbox en la línea (Ctrl+T)", lambda b: self.toggle_checkbox_lines())
-        self._add_btn(tab_box, "+", "Nueva nota", lambda b: self.app.new_note(near=self))
+        self.pin_btn = self._add_btn(tab_box, None, core.PIN_TIP[self.pinned], lambda b: self.set_pinned(not self.pinned))
+        self.pin_img = Gtk.Image()
+        self.pin_btn.set_image(self.pin_img)
+        self._update_pin_button()
+        self._add_btn(tab_box, "?", "Ayuda: atajos para checkboxes e ítems", self._show_help)
         self.menu_btn = self._add_btn(tab_box, "⋮", "Color y opciones", self._show_menu)
         self._add_btn(tab_box, "×", "Borrar nota", lambda b: self._confirm_delete())
         self.connect("size-allocate", self._update_input_shape)
@@ -307,7 +311,7 @@ class Note(Gtk.Window):
 
     # ------------------------------------------------------------ helpers UI
     def _add_btn(self, box, label, tip, cb):
-        b = Gtk.Button(label=label)
+        b = Gtk.Button(label=label) if label else Gtk.Button()
         b.set_relief(Gtk.ReliefStyle.NONE)
         b.set_focus_on_click(False)
         b.set_tooltip_text(tip)
@@ -315,6 +319,40 @@ class Note(Gtk.Window):
         b.connect("clicked", cb)
         box.pack_start(b, False, False, 0)
         return b
+
+    # ------------------------------------------------------------ pin
+    def _apply_layer(self):
+        """Fijada: encima de todas las ventanas. Si no: en la capa del escritorio."""
+        if self.pinned:
+            self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
+            self.set_keep_above(True)
+        else:
+            self.set_type_hint(Gdk.WindowTypeHint.DESKTOP)
+            self.set_keep_above(False)
+
+    def _update_pin_button(self):
+        try:
+            self.pin_img.set_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file(core.pin_png(self.pinned)))
+        except GLib.Error:
+            self.pin_btn.set_label("📌" if self.pinned else "○")
+        self.pin_btn.set_tooltip_text(core.PIN_TIP[self.pinned])
+
+    def set_pinned(self, pinned):
+        if pinned == self.pinned:
+            return
+        self.pinned = self.data["pinned"] = pinned
+        self._update_pin_button()
+        # el tipo de ventana solo se puede cambiar con la ventana oculta
+        x, y = self.get_position()
+        self.hide()
+        self._apply_layer()
+        self.move(x, y)
+        self.show()
+        self.stick()
+        self.present()
+        # el "siempre encima" pedido con la ventana oculta se pierde al mostrarla
+        GLib.idle_add(lambda: self.set_keep_above(self.pinned) and False)
+        self.app.schedule_save()
 
     def _apply_color(self, color):
         if color not in COLORS:
@@ -345,6 +383,21 @@ class Note(Gtk.Window):
         item = Gtk.MenuItem(label="Cerrar Post-its (las notas se guardan)")
         item.connect("activate", lambda i: self.app.quit())
         menu.append(item)
+        menu.show_all()
+        menu.attach_to_widget(self, None)
+        menu.popup_at_widget(button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, None)
+
+    def _show_help(self, button):
+        menu = Gtk.Menu()
+        head = Gtk.MenuItem(label="Al inicio de una línea:")
+        head.set_sensitive(False)
+        menu.append(head)
+        for keys, what in core.HELP:
+            item = Gtk.MenuItem()
+            lbl = Gtk.Label(xalign=0)
+            lbl.set_markup(f"<b>{GLib.markup_escape_text(keys)}</b>   →   {GLib.markup_escape_text(what)}")
+            item.add(lbl)
+            menu.append(item)
         menu.show_all()
         menu.attach_to_widget(self, None)
         menu.popup_at_widget(button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, None)
@@ -552,6 +605,11 @@ class Note(Gtk.Window):
         start, end = self._line_bounds(line)
         return core.prefix_len(self.buf.get_text(start, end, False))
 
+    def _list_prefix(self, line):
+        """(carácter, largo) del prefijo de lista de la línea: ☐ ☑ o •."""
+        start, end = self._line_bounds(line)
+        return core.list_prefix(self.buf.get_text(start, end, False))
+
     def toggle_checkbox_lines(self):
         if self.buf.get_has_selection():
             a, b = self.buf.get_selection_bounds()
@@ -570,8 +628,15 @@ class Note(Gtk.Window):
                 self.buf.delete(s, e)
         else:
             for n in lines:
-                if not self._prefix_len(n):
-                    self.buf.insert(self.buf.get_iter_at_line(n), BOX_OFF + " ")
+                if self._prefix_len(n):
+                    continue
+                char, plen = self._list_prefix(n)
+                if char == core.BULLET:  # un ítem pasa a ser checkbox
+                    s = self.buf.get_iter_at_line(n)
+                    e = s.copy()
+                    e.forward_chars(plen)
+                    self.buf.delete(s, e)
+                self.buf.insert(self.buf.get_iter_at_line(n), BOX_OFF + " ")
         self.buf.end_user_action()
         self.view.grab_focus()
 
@@ -601,21 +666,33 @@ class Note(Gtk.Window):
         if ctrl and event.keyval in (Gdk.KEY_t, Gdk.KEY_T):
             self.toggle_checkbox_lines()
             return True
+        if event.keyval == Gdk.KEY_space and not ctrl and not self.buf.get_has_selection():
+            # "[] " -> ☐, "[x] " -> ☑, "* " -> •  (solo al inicio de la línea)
+            cur = self.buf.get_iter_at_mark(self.buf.get_insert())
+            start = self.buf.get_iter_at_line(cur.get_line())
+            repl = core.autoformat(self.buf.get_text(start, cur, False))
+            if repl:
+                self.buf.begin_user_action()
+                self.buf.delete(start, cur)
+                self.buf.insert(start, repl)
+                self.buf.end_user_action()
+                return True
+            return False
         if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and not (ctrl or shift):
             cur = self.buf.get_iter_at_mark(self.buf.get_insert())
             line = cur.get_line()
-            plen = self._prefix_len(line)
+            char, plen = self._list_prefix(line)
             if not plen or self.buf.get_has_selection():
                 return False
             start, end = self._line_bounds(line)
             if not self.buf.get_text(start, end, False)[plen:].strip():
-                # checkbox vacío + Enter: terminar la lista
+                # checkbox o ítem vacío + Enter: terminar la lista
                 self.buf.delete(start, end)
                 return True
             if cur.get_line_offset() < plen:
                 return False
             self.buf.begin_user_action()
-            self.buf.insert_at_cursor("\n" + BOX_OFF + " ")
+            self.buf.insert_at_cursor("\n" + core.continuation_of(char) + " ")
             self.buf.end_user_action()
             view.scroll_mark_onscreen(self.buf.get_insert())
             return True
@@ -626,7 +703,7 @@ class Note(Gtk.Window):
         buf.remove_tag(self.tag_done, buf.get_start_iter(), buf.get_end_iter())
         buf.remove_tag(self.tag_box, buf.get_start_iter(), buf.get_end_iter())
         for n in range(buf.get_line_count()):
-            plen = self._prefix_len(n)
+            _char, plen = self._list_prefix(n)
             if not plen:
                 continue
             start, end = self._line_bounds(n)
@@ -759,7 +836,7 @@ class PostItsApp(Gtk.Application):
         escritorio; al hacerle click se pone encima de las notas. Las volvemos
         a subir, siempre dentro de la capa del escritorio."""
         self._raise_id = 0
-        mine = {n.get_window().get_xid(): n for n in self.notes if n.get_window()}
+        mine = {n.get_window().get_xid(): n for n in self.notes if n.get_window() and not n.pinned}
         seen_note = False
         for w in self._wnck.get_windows_stacked():  # de abajo hacia arriba
             if w.get_xid() in mine:

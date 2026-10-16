@@ -16,6 +16,19 @@ La versión se define en un solo lugar: `VERSION` en
   **Reiniciar** o **Finalizar** la app (las notas se guardan antes).
 - El instalador de Windows instala `pystray` y `pillow` (opcionales: sin
   ellos la app funciona igual, sin ícono en la barra).
+- Botón 📌 en la pestaña para **fijar** una nota: queda siempre visible,
+  encima de todas las ventanas; al desfijarla vuelve al escritorio. Se
+  recuerda entre sesiones.
+- Atajos al inicio de una línea: `[] ` pone un checkbox ☐, `[x] ` uno
+  marcado ☑ y `* ` un ítem de lista •. Enter continúa también las listas
+  de ítems.
+- Botón **?** en la pestaña con la ayuda de esos atajos.
+
+### Cambiado
+- La pestaña queda con 📌 ? ⋮ ×: se quitaron el botón ☑ (reemplazado por
+  los atajos y Ctrl+T, que sigue funcionando y convierte ítems en
+  checkboxes) y el botón + (*Nueva nota* está en el menú ⋮ y en el ícono
+  de la barra).
 
 ## [1.2.0] - 2026-10-16
 

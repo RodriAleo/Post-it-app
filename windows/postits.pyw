@@ -84,10 +84,13 @@ class Note:
         self.tab = tk.Frame(self.tab_row, bd=0, highlightthickness=1, padx=2, cursor="fleur")
         self.tab.pack(side="right")
         self.buttons = []
+        # se empaquetan de derecha a izquierda: 📌 ? ⋮ ×
         self._add_btn("×", "Borrar nota", self._confirm_delete)
         self.menu_btn = self._add_btn("⋮", "Color y opciones", self._show_menu)
-        self._add_btn("+", "Nueva nota", lambda: self.app.new_note(near=self))
-        self._add_btn(core.BOX_ON, "Checkbox en la línea (Ctrl+T)", self.toggle_checkbox_lines)
+        self.help_btn = self._add_btn("?", "Ayuda: atajos para checkboxes e ítems", self._show_help)
+        self.pinned = data.get("pinned", False)
+        self.pin_btn = self._add_btn("", core.PIN_TIP[self.pinned], lambda: self.set_pinned(not self.pinned),
+                                     image=app.pin_images.get(self.pinned))
         self.tab.bind("<ButtonPress-1>", self._on_header_press)
         self.tab.bind("<B1-Motion>", self._on_drag)
         self.tab.bind("<ButtonRelease-1>", self._on_release)
@@ -152,6 +155,7 @@ class Note:
         self.text.bind("<ButtonPress-1>", self._on_text_press)
         self.text.bind("<Control-t>", self._on_toggle_key)
         self.text.bind("<Control-T>", self._on_toggle_key)
+        self.text.bind("<space>", self._on_space)
         self.text.bind("<Return>", self._on_return)
         self.text.bind("<KP_Enter>", self._on_return)
         self.text.bind("<Control-y>", self._on_redo)
@@ -162,10 +166,16 @@ class Note:
         top.update_idletasks()
         if win32_desktop:
             win32_desktop.pin_to_desktop(top)
+        if self.pinned:
+            self._apply_layer()
 
     # ------------------------------------------------------------ helpers UI
-    def _add_btn(self, label, tip, cb):
+    def _add_btn(self, label, tip, cb, image=None):
         b = tk.Label(self.tab, text=label, font=self.app.btn_font, fg=BTN_COLOR, padx=5, cursor="hand2")
+        if image is not None:
+            b.config(image=image, padx=3)
+        elif not label:
+            b.config(text="📌")  # sin imagen del pin
         b.pack(side="right")
         b.bind("<Enter>", lambda e: b.config(bg=shade(self._head, 0.9)))
         b.bind("<Leave>", lambda e: b.config(bg=self._head))
@@ -177,8 +187,37 @@ class Note:
                 cb()
         b.bind("<ButtonRelease-1>", release)
         self.buttons.append(b)
-        Tooltip(b, tip)
+        b.tooltip = Tooltip(b, tip)
         return b
+
+    # ------------------------------------------------------------ pin
+    def _apply_layer(self):
+        """Fijada: encima de todas las ventanas. Si no: en el escritorio."""
+        if win32_desktop:
+            win32_desktop.set_pinned(self.top, self.pinned)
+        else:
+            self.top.attributes("-topmost", self.pinned)
+
+    def set_pinned(self, pinned):
+        if pinned == self.pinned:
+            return
+        self.pinned = self.data["pinned"] = pinned
+        image = self.app.pin_images.get(pinned)
+        if image is not None:
+            self.pin_btn.config(image=image)
+        self.pin_btn.tooltip.text = core.PIN_TIP[pinned]
+        self._apply_layer()
+        if pinned:
+            self.top.lift()
+        self.app.schedule_save()
+
+    def _show_help(self):
+        menu = tk.Menu(self.top, tearoff=0)
+        menu.add_command(label="Al inicio de una línea:", state="disabled")
+        for keys, what in core.HELP:
+            menu.add_command(label=f"{keys}   →   {what}")
+        b = self.help_btn
+        menu.tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
 
     def apply_color(self, color):
         if color not in COLORS:
@@ -385,8 +424,13 @@ class Note:
                 t.delete(f"{n}.0", f"{n}.{core.prefix_len(self._line_text(n))}")
         else:
             for n in lines:
-                if not core.prefix_len(self._line_text(n)):
-                    t.insert(f"{n}.0", BOX_OFF + " ")
+                line = self._line_text(n)
+                if core.prefix_len(line):
+                    continue
+                char, plen = core.list_prefix(line)
+                if char == core.BULLET:  # un ítem pasa a ser checkbox
+                    t.delete(f"{n}.0", f"{n}.{plen}")
+                t.insert(f"{n}.0", BOX_OFF + " ")
         t.edit_separator()
         t.focus_set()
 
@@ -422,6 +466,21 @@ class Note:
                 return "break"
         return None
 
+    def _on_space(self, e):
+        """"[] " -> ☐, "[x] " -> ☑, "* " -> •  (solo al inicio de la línea)."""
+        t = self.text
+        if e.state & 0x0004 or t.tag_ranges("sel"):
+            return None
+        line = t.index("insert").split(".")[0]
+        repl = core.autoformat(t.get(f"{line}.0", "insert"))
+        if not repl:
+            return None
+        t.edit_separator()
+        t.delete(f"{line}.0", "insert")
+        t.insert(f"{line}.0", repl)
+        t.edit_separator()
+        return "break"
+
     def _on_return(self, e):
         t = self.text
         if e.state & 0x0005:  # Shift o Ctrl: salto de línea normal
@@ -430,17 +489,17 @@ class Note:
             return None
         line, col = (int(p) for p in t.index("insert").split("."))
         text = self._line_text(line)
-        plen = core.prefix_len(text)
+        char, plen = core.list_prefix(text)
         if not plen:
             return None
         if not text[plen:].strip():
-            # checkbox vacío + Enter: terminar la lista
+            # checkbox o ítem vacío + Enter: terminar la lista
             t.delete(f"{line}.0", f"{line}.end")
             return "break"
         if col < plen:
             return None
         t.edit_separator()
-        t.insert("insert", "\n" + BOX_OFF + " ")
+        t.insert("insert", "\n" + core.continuation_of(char) + " ")
         t.see("insert")
         return "break"
 
@@ -450,7 +509,7 @@ class Note:
         t.tag_remove("box", "1.0", "end")
         for n in range(1, self._line_count() + 1):
             line = self._line_text(n)
-            plen = core.prefix_len(line)
+            _char, plen = core.list_prefix(line)
             if not plen:
                 continue
             t.tag_add("box", f"{n}.0")
@@ -511,6 +570,12 @@ class App:
         self.text_font = tkfont.Font(family=family, size=core.FONT_SIZE)
         self.title_font = tkfont.Font(family=family, size=core.FONT_SIZE, weight="bold")
         self.btn_font = tkfont.Font(family=family, size=core.FONT_SIZE)
+        self.pin_images = {}
+        for state in (True, False):
+            try:
+                self.pin_images[state] = tk.PhotoImage(file=core.pin_png(state))
+            except tk.TclError:
+                pass
         self.notes = []
         self._save_job = None
         self._closing = False
