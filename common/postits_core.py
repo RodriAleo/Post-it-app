@@ -1,0 +1,142 @@
+"""Partes compartidas entre la versión de Linux y la de Windows.
+
+Constantes visuales, formato del archivo de notas y la lógica de checkboxes
+sobre texto plano. Nada acá depende del toolkit gráfico.
+"""
+
+import json
+import os
+import sys
+import uuid
+
+FONT_SIZE = 11  # pt
+BORDER = 6      # px sensibles para redimensionar
+CORNER = 16     # px de esquina que redimensionan en diagonal
+MIN_W, MIN_H = 160, 110
+DEFAULT_W, DEFAULT_H = 260, 220
+DRAG_THRESHOLD = 4
+SAVE_DELAY_MS = 600
+
+BOX_OFF = "☐"
+BOX_ON = "☑"
+BOXES = (BOX_OFF, BOX_ON)
+
+# nombre: (fondo, barra, borde)
+COLORS = {
+    "Amarillo": ("#fff7a8", "#f5e77a", "#d9c84f"),
+    "Rosa": ("#ffd1e0", "#f9b4cb", "#e08fab"),
+    "Verde": ("#d4f0b8", "#bde39a", "#94c46c"),
+    "Celeste": ("#c9ecfb", "#a9dcf3", "#7fbfdc"),
+    "Naranja": ("#ffdcae", "#fcc788", "#e0a35a"),
+    "Lila": ("#e2d8f5", "#cfc0ec", "#a995d4"),
+}
+DEFAULT_COLOR = "Amarillo"
+TEXT_COLOR = "#2b2b2b"
+DONE_COLOR = "#8a8a8a"
+BOX_COLOR = "#555555"
+
+
+# ---------------------------------------------------------------- checkboxes
+def prefix_len(line):
+    """Largo del prefijo de checkbox de una línea ("☐ " → 2, sin checkbox → 0)."""
+    if line[:1] in BOXES:
+        return 2 if line[1:2] == " " else 1
+    return 0
+
+
+def all_have_box(lines):
+    """True si todas las líneas ya tienen checkbox (el botón entonces los quita)."""
+    return all(prefix_len(line) for line in lines)
+
+
+def toggled_box(char):
+    return BOX_OFF if char == BOX_ON else BOX_ON
+
+
+# ---------------------------------------------------------------- geometría
+def edge_at(x, y, w, h):
+    """Borde/esquina bajo el puntero (coordenadas relativas a la nota).
+
+    Devuelve "t", "b", "l", "r", "tl", "tr", "bl", "br" o None.
+    """
+    t, b = y < BORDER, y >= h - BORDER
+    l, r = x < BORDER, x >= w - BORDER
+    if l or r:
+        t, b = t or y < CORNER, b or y >= h - CORNER
+    if t or b:
+        l, r = l or x < CORNER, r or x >= w - CORNER
+    edge = ("t" if t else "b" if b else "") + ("l" if l else "r" if r else "")
+    return edge or None
+
+
+def resized_geometry(edge, geom0, dx, dy):
+    """Nueva geometría (x, y, w, h) al arrastrar `edge` por (dx, dy)."""
+    x0, y0, w0, h0 = geom0
+    x, y, w, h = geom0
+    if "r" in edge:
+        w = max(MIN_W, w0 + dx)
+    if "l" in edge:
+        w = max(MIN_W, w0 - dx)
+        x = x0 + (w0 - w)
+    if "b" in edge:
+        h = max(MIN_H, h0 + dy)
+    if "t" in edge:
+        h = max(MIN_H, h0 - dy)
+        y = y0 + (h0 - h)
+    return x, y, w, h
+
+
+# ---------------------------------------------------------------- guardado
+def data_dir():
+    if os.environ.get("POSTITS_DATA"):
+        return os.environ["POSTITS_DATA"]
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "PostIts")
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "postits")
+
+
+def data_file():
+    return os.path.join(data_dir(), "notes.json")
+
+
+def new_note_data(x, y, color=DEFAULT_COLOR):
+    return {
+        "id": uuid.uuid4().hex, "title": "Nota", "text": "",
+        "x": int(x), "y": int(y), "w": DEFAULT_W, "h": DEFAULT_H, "color": color,
+    }
+
+
+def load_notes():
+    path = data_file()
+    try:
+        with open(path, encoding="utf-8") as f:
+            notes = json.load(f).get("notes", [])
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError) as e:
+        print(f"postits: no pude leer {path}: {e}", file=sys.stderr)
+        return []
+    out = []
+    for d in notes:
+        d.setdefault("id", uuid.uuid4().hex)
+        d.setdefault("title", "Nota")
+        d.setdefault("text", "")
+        if d.get("color") not in COLORS:
+            d["color"] = DEFAULT_COLOR
+        d["x"], d["y"] = int(d.get("x", 100)), int(d.get("y", 100))
+        d["w"] = max(MIN_W, int(d.get("w", DEFAULT_W)))
+        d["h"] = max(MIN_H, int(d.get("h", DEFAULT_H)))
+        out.append(d)
+    return out
+
+
+def save_notes(notes):
+    """Guarda la lista de notas (dicts) de forma atómica."""
+    os.makedirs(data_dir(), exist_ok=True)
+    path = data_file()
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"version": 1, "notes": notes}, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
