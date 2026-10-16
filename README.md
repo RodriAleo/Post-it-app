@@ -11,7 +11,7 @@ escritorio (Super+D / Win+D, o sin ventanas encima).
 | Acción | Cómo |
 |---|---|
 | Mover una nota | Arrastrar desde la barra del título o la pestaña |
-| Renombrar | Click en el título (Enter guarda, Esc cancela); los títulos largos se ven completos en varias líneas |
+| Renombrar | Click en la barra del título (Enter guarda, Esc cancela); los títulos largos se ven completos en varias líneas |
 | Cambiar tamaño | Arrastrar desde cualquier borde o esquina |
 | Escribir | Click adentro de la nota (letra tamaño 11) |
 | Poner/quitar checkbox | Botón ☑ de la pestaña o **Ctrl+T** (sobre la línea actual o las líneas seleccionadas) |

@@ -17,6 +17,9 @@ La versión se define en un solo lugar: `VERSION` en
   "…", y el campo para renombrarlo también crece en varias líneas.
 
 ### Corregido
+- Hacer click en el título para renombrarlo a veces no funcionaba (solo
+  respondía el borde izquierdo del título); ahora cualquier click sin
+  arrastrar sobre la barra del título empieza a editarlo.
 - Linux: el instalador reemplaza el lanzador `.desktop` en vez de
   reescribirlo, para que GNOME tome el ícono nuevo sin reiniciar la sesión.
 

@@ -434,11 +434,8 @@ class Note(Gtk.Window):
             return True
         if self.title_stack.get_visible_child_name() == "entry":
             self._finish_rename(True)
-        # ¿el click fue sobre el texto del título?
-        alloc = self.title_label.get_allocation()
-        lx, ly = widget.translate_coordinates(self.title_label, int(event.x), int(event.y))
-        _min, nat = self.title_label.get_preferred_width()
-        on_title = 0 <= lx <= min(nat, alloc.width) + 4 and 0 <= ly <= alloc.height
+        # toda la barra del título es "el título": click sin arrastrar = renombrar
+        on_title = widget is self.header
         self._drag = ["move", None, event.x_root, event.y_root, self._geom(), False, on_title]
         return True
 

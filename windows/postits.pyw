@@ -306,10 +306,8 @@ class Note:
             return "break"
         if self.title_edit.winfo_ismapped():
             self._finish_rename(True)
-        on_title = False
-        if e.widget is self.title_label:
-            text_w = min(self.app.title_font.measure(self.data["title"]), int(self.title_label["wraplength"]))
-            on_title = e.x <= text_w + 2 * int(self.title_label["padx"]) + 4
+        # toda la barra del título es "el título": click sin arrastrar = renombrar
+        on_title = e.widget in (self.header, self.title_label)
         self._drag = ["move", None, e.x_root, e.y_root, self._geom(), False, on_title]
         return "break"
 
