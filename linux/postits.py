@@ -19,6 +19,11 @@ import sys
 
 import gi
 
+# En Wayland GNOME ignora la capa "escritorio", no oculta las notas del dock y
+# Wnck no funciona: se fuerza X11 (XWayland), que hay que elegir antes de
+# importar Gtk.
+os.environ["GDK_BACKEND"] = "x11"
+
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
@@ -755,8 +760,8 @@ class PostItsApp(Gtk.Application):
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self._on_signal)
         self._raise_id = 0
-        if Wnck is not None:
-            self._wnck = Wnck.Screen.get_default()
+        self._wnck = Wnck.Screen.get_default() if Wnck is not None else None
+        if self._wnck is not None:
             self._wnck.connect("window-stacking-changed", self._on_stacking_changed)
         self._setup_tray()
 

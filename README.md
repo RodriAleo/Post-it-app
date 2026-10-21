@@ -43,8 +43,9 @@ Instala en `~/.local/lib/postits`, agrega **Post-its** al menú de aplicaciones
 y lo arranca al iniciar sesión. Notas en `~/.local/share/postits/notes.json`.
 Para quitarlo: `./linux/uninstall.sh`.
 
-> En Wayland GNOME no deja que las apps se pongan en la capa del escritorio;
-> hace falta la sesión "Ubuntu en Xorg".
+> En Wayland GNOME no deja que las apps se pongan en la capa del escritorio,
+> así que la app se ejecuta siempre con X11 (XWayland). No hace falta la sesión
+> "Ubuntu en Xorg", que además ya no existe en Ubuntu 25.10 y posteriores.
 
 ### Windows 10 / 11
 
