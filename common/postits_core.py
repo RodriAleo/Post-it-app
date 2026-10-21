@@ -45,8 +45,8 @@ def handle_version_flag(argv):
     return False
 
 FONT_SIZE = 11  # pt
-BORDER = 6      # px sensibles para redimensionar
-CORNER = 16     # px de esquina que redimensionan en diagonal
+BORDER = 10     # px sensibles para redimensionar
+CORNER = 20     # px de esquina que redimensionan en diagonal
 MIN_W, MIN_H = 160, 110
 DEFAULT_W, DEFAULT_H = 260, 220
 DRAG_THRESHOLD = 4
