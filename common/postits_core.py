@@ -10,7 +10,7 @@ import sys
 import uuid
 
 # Única fuente del número de versión (ver CHANGELOG.md).
-VERSION = "1.3.0"
+VERSION = "1.3.2"
 APP_NAME = "Post-its"
 APP_URL = "https://github.com/RodriAleo/Post-it-app"
 
@@ -157,6 +157,79 @@ def resized_geometry(edge, geom0, dx, dy):
     return x, y, w, h
 
 
+def _best_area(x, y, w, h, areas):
+    """Índice del área donde más se ve la nota o, si no se ve en ninguna, la
+    más cercana."""
+    def overlap(a):
+        ax, ay, aw, ah = a
+        return max(0, min(x + w, ax + aw) - max(x, ax)) * max(0, min(y + h, ay + ah) - max(y, ay))
+
+    def distance(a):
+        ax, ay, aw, ah = a
+        dx = max(ax - (x + w), 0, x - (ax + aw))
+        dy = max(ay - (y + h), 0, y - (ay + ah))
+        return dx * dx + dy * dy
+
+    return max(range(len(areas)), key=lambda i: (overlap(areas[i]), -distance(areas[i])))
+
+
+def fit_on_screen(x, y, w, h, areas):
+    """Posición (x, y) para que la nota quede entera dentro de una pantalla.
+
+    `areas` son las áreas de trabajo (x, y, w, h) de los monitores. Una nota
+    que ya está entera dentro de una pantalla no se mueve.
+    """
+    if not areas:
+        return x, y
+    ax, ay, aw, ah = areas[_best_area(x, y, w, h, areas)]
+    return max(ax, min(x, ax + aw - w)), max(ay, min(y, ay + ah - h))
+
+
+def note_home(x, y, w, h, monitors):
+    """Dónde dejó el usuario la nota: monitor, su área y la posición.
+
+    `monitors` es una lista de (nombre, área); se guarda en la nota como
+    "home" para poder ubicarla en el mismo lugar relativo de otra pantalla.
+    """
+    if not monitors:
+        return None
+    name, area = monitors[_best_area(x, y, w, h, [a for _, a in monitors])]
+    return {"monitor": name, "area": list(area), "x": int(x), "y": int(y)}
+
+
+def place_note(w, h, home, monitors, primary=0):
+    """Posición de una nota de w×h según su "home" y los monitores actuales.
+
+    Si el monitor donde quedó sigue conectado, va al mismo lugar (escalado si
+    cambió su tamaño). Si no, pasa al monitor principal (`primary`, índice en
+    `monitors`) en la misma posición relativa: arriba a la izquierda sigue
+    arriba a la izquierda, abajo a la derecha sigue abajo a la derecha.
+    """
+    if not monitors:
+        return home["x"], home["y"]
+    areas = [a for _, a in monitors]
+    names = [n for n, _ in monitors]
+    tx, ty, tw, th = areas[names.index(home["monitor"]) if home["monitor"] in names else primary]
+    hx, hy, hw, hh = home["area"]
+
+    def scale(pos, start, size, new_start, new_size, length):
+        free = size - length
+        rel = min(1.0, max(0.0, (pos - start) / free)) if free > 0 else 0.0
+        return new_start + round(rel * max(0, new_size - length))
+
+    x = scale(home["x"], hx, hw, tx, tw, w)
+    y = scale(home["y"], hy, hh, ty, th, h)
+    return fit_on_screen(x, y, w, h, [(tx, ty, tw, th)])
+
+
+def _valid_home(home):
+    try:
+        return {"monitor": str(home["monitor"]), "area": [int(v) for v in home["area"]][:4],
+                "x": int(home["x"]), "y": int(home["y"])}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------- guardado
 def data_dir():
     if os.environ.get("POSTITS_DATA"):
@@ -201,6 +274,11 @@ def load_notes():
         d["x"], d["y"] = int(d.get("x", 100)), int(d.get("y", 100))
         d["w"] = max(MIN_W, int(d.get("w", DEFAULT_W)))
         d["h"] = max(MIN_H, int(d.get("h", DEFAULT_H)))
+        home = _valid_home(d.get("home"))
+        if home is None or len(home["area"]) != 4:
+            d.pop("home", None)
+        else:
+            d["home"] = home
         out.append(d)
     return out
 

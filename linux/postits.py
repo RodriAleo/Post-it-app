@@ -168,6 +168,20 @@ class WrapTextView(Gtk.TextView):
         return h, h
 
 
+def monitors():
+    """Monitores conectados: ([(nombre, área de trabajo (x, y, w, h))], índice
+    del principal). En X11 el nombre es el conector (eDP-1, HDMI-1...)."""
+    display = Gdk.Display.get_default()
+    out, primary = [], 0
+    for i in range(display.get_n_monitors()):
+        m = display.get_monitor(i)
+        a = m.get_workarea()
+        out.append((m.get_model() or f"#{i}", (a.x, a.y, a.width, a.height)))
+        if m.is_primary():
+            primary = i
+    return out, primary
+
+
 class Note(Gtk.Window):
     def __init__(self, app, data):
         super().__init__(application=app, type=Gtk.WindowType.TOPLEVEL)
@@ -184,7 +198,14 @@ class Note(Gtk.Window):
         self.set_skip_pager_hint(True)
         self.stick()
         self.set_default_size(data["w"], data["h"])
-        self.move(data["x"], data["y"])
+        mons, primary = monitors()
+        if "home" not in data:
+            data["home"] = core.note_home(data["x"], data["y"], data["w"], data["h"], mons)
+        # si quedó en un monitor que ya no está, pasa al principal en el mismo lugar relativo
+        if data["home"]:
+            self.move(*core.place_note(data["w"], data["h"], data["home"], mons, primary))
+        else:
+            self.move(data["x"], data["y"])
 
         # ventana con transparencia: a la izquierda de la pestaña se ve el escritorio
         self.get_style_context().add_class("note-window")
@@ -279,6 +300,8 @@ class Note(Gtk.Window):
         self.title_edit.connect("focus-out-event", lambda *a: self._finish_rename(True))
         self.title_edit.connect("key-press-event", self._on_title_key)
         self.title_edit.connect("key-press-event", self._keep_pointer_visible)
+        self.title_edit.connect("button-press-event", self._on_title_edit_press)
+        self._rename_click = None  # (tiempo, x, y) del click que abrió la edición
         self.title_stack.add_named(self.title_label, "label")
         self.title_stack.add_named(self.title_edit, "entry")
         # el alto/ancho sigue al hijo visible, no al más grande
@@ -450,12 +473,37 @@ class Note(Gtk.Window):
                 offset = min(len(title), max(0, self._title_offset_at(*at)))
             except (TypeError, ValueError):
                 pass
+        self._rename_click = (Gtk.get_current_event_time(), *at) if at is not None else None
         tbuf = self.title_edit.get_buffer()
         tbuf.set_text(title)
         self.title_stack.set_visible_child_name("entry")
         self.present_with_time(Gtk.get_current_event_time())
         self.title_edit.grab_focus()
         tbuf.place_cursor(tbuf.get_iter_at_offset(offset))
+
+    def _on_title_edit_press(self, view, event):
+        """El primer click abre la edición, así que el campo recibe el segundo
+        click de un doble click como si fuera simple: seleccionamos la palabra."""
+        first, self._rename_click = self._rename_click, None
+        if first is None or event.button != 1 or event.type != Gdk.EventType.BUTTON_PRESS:
+            return False
+        settings = view.get_settings()
+        t0, x0, y0 = first
+        dist = settings.props.gtk_double_click_distance
+        if (event.time - t0 > settings.props.gtk_double_click_time
+                or abs(event.x_root - x0) > dist or abs(event.y_root - y0) > dist):
+            return False
+        bx, by = view.window_to_buffer_coords(Gtk.TextWindowType.TEXT, int(event.x), int(event.y))
+        found, it = view.get_iter_at_location(bx, by)
+        if not found or not (it.inside_word() or it.ends_word()):
+            return False
+        start, end = it.copy(), it.copy()
+        if not start.starts_word():
+            start.backward_word_start()
+        if not end.ends_word():
+            end.forward_word_end()
+        view.get_buffer().select_range(start, end)
+        return True
 
     def _finish_rename(self, accept):
         if self.title_stack.get_visible_child_name() != "entry":
@@ -590,6 +638,8 @@ class Note(Gtk.Window):
             self._start_rename(at=on_title)
         elif kind == "move" and not moved:
             self.present_with_time(event.time)
+        if moved:
+            self.data["home"] = core.note_home(*self._geom(), monitors()[0])
         self.app.schedule_save()
         return True
 
@@ -763,6 +813,10 @@ class PostItsApp(Gtk.Application):
         self._wnck = Wnck.Screen.get_default() if Wnck is not None else None
         if self._wnck is not None:
             self._wnck.connect("window-stacking-changed", self._on_stacking_changed)
+        # al desconectar un monitor, las notas que estaban ahí pasan al
+        # principal; al reconectarlo, vuelven
+        self._fit_id = 0
+        Gdk.Screen.get_default().connect("monitors-changed", self._on_monitors_changed)
         self._setup_tray()
 
     # ------------------------------------------------------------ bandeja
@@ -854,6 +908,26 @@ class PostItsApp(Gtk.Application):
                     gw.set_user_time(GdkX11.x11_get_server_time(gw))
                     gw.raise_()
                 break
+        return False
+
+    # ------------------------------------------------------------ monitores
+    def _on_monitors_changed(self, screen):
+        # el área de trabajo de cada monitor se actualiza un rato después
+        if self._fit_id:
+            GLib.source_remove(self._fit_id)
+        self._fit_id = GLib.timeout_add(1000, self._fit_notes)
+
+    def _fit_notes(self):
+        self._fit_id = 0
+        mons, primary = monitors()
+        for n in self.notes:
+            x, y, w, h = n._geom()
+            if not n.data.get("home"):
+                n.data["home"] = core.note_home(x, y, w, h, mons)
+            nx, ny = core.place_note(w, h, n.data["home"], mons, primary)
+            if (nx, ny) != (x, y):
+                n.move(nx, ny)
+        self.schedule_save()
         return False
 
     # ------------------------------------------------------------ notas

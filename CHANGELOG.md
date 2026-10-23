@@ -7,6 +7,27 @@ Todos los cambios importantes de Post-its. Formato basado en
 La versión se define en un solo lugar: `VERSION` en
 [`common/postits_core.py`](common/postits_core.py).
 
+## [1.3.2] - 2026-10-22
+
+### Cambiado
+- Linux: cada nota recuerda en qué monitor la dejaste y en qué lugar. Si
+  ese monitor se desconecta, pasa al principal en la misma posición
+  relativa (arriba a la izquierda sigue arriba a la izquierda) y, al
+  reconectarlo, vuelve a donde estaba. Se guarda en `home` dentro de
+  `notes.json`; solo cambia cuando movés o redimensionás la nota.
+
+### Corregido
+- Linux: doble click sobre una palabra del título la selecciona entera,
+  igual que en el cuerpo de la nota.
+
+## [1.3.1] - 2026-10-22
+
+### Corregido
+- Linux: las notas guardadas en un monitor que ya no está conectado
+  quedaban fuera de la pantalla. Ahora, al abrir la app y al conectar o
+  desconectar un monitor, cada nota que no se ve entera se mueve dentro de
+  la pantalla más cercana.
+
 ## [1.3.0] - 2026-10-16
 
 ### Agregado
@@ -80,6 +101,8 @@ La versión se define en un solo lugar: `VERSION` en
   confirmación, guardado automático en JSON compartido entre sistemas.
 - Instaladores con inicio automático para ambos sistemas.
 
+[1.3.2]: https://github.com/RodriAleo/Post-it-app/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/RodriAleo/Post-it-app/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/RodriAleo/Post-it-app/compare/v1.0.0...v1.1.0
